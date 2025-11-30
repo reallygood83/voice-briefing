@@ -1,0 +1,56 @@
+/* Voice Briefing Plugin Styles */
+
+.voice-briefing-advanced {
+	margin-top: 20px;
+	padding: 15px;
+	background-color: var(--background-secondary);
+	border-radius: 8px;
+}
+
+.voice-briefing-advanced h3 {
+	cursor: pointer;
+	user-select: none;
+}
+
+.voice-briefing-advanced h3:hover {
+	color: var(--text-accent);
+}
+
+/* Connection status indicators */
+.voice-briefing-status {
+	display: inline-block;
+	margin-left: 8px;
+	font-weight: bold;
+}
+
+.voice-briefing-status.connected {
+	color: var(--text-success);
+}
+
+.voice-briefing-status.disconnected {
+	color: var(--text-error);
+}
+
+.voice-briefing-status.connecting {
+	color: var(--text-warning);
+}
+
+/* Audio player embedded in notes */
+.voice-briefing-audio {
+	margin: 20px 0;
+	padding: 15px;
+	background-color: var(--background-secondary);
+	border-radius: 8px;
+	border-left: 4px solid var(--interactive-accent);
+}
+
+.voice-briefing-audio audio {
+	width: 100%;
+	margin-top: 10px;
+}
+
+.voice-briefing-audio .briefing-meta {
+	font-size: 0.9em;
+	color: var(--text-muted);
+	margin-top: 8px;
+}
