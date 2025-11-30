@@ -22,9 +22,11 @@ class ProgressModal extends Modal {
 	}
 
 	onOpen() {
-		const { contentEl } = this;
+		const { contentEl, modalEl } = this;
 		contentEl.empty();
-		contentEl.addClass('voice-briefing-progress-modal');
+
+		// Add class to modal container for proper styling
+		modalEl.addClass('mod-voice-briefing');
 
 		// Header
 		const header = contentEl.createDiv({ cls: 'progress-header' });
@@ -62,43 +64,50 @@ class ProgressModal extends Modal {
 	}
 
 	private addStyles() {
+		// Check if styles already exist
+		if (document.getElementById('voice-briefing-modal-styles')) return;
+
 		const style = document.createElement('style');
+		style.id = 'voice-briefing-modal-styles';
 		style.textContent = `
-			.voice-briefing-progress-modal {
-				padding: 20px;
-				min-width: 400px;
+			.modal.mod-voice-briefing .modal-content {
+				padding: 24px;
+				min-width: 420px;
+				background: var(--background-primary);
+				color: var(--text-normal);
 			}
-			.voice-briefing-progress-modal .progress-header {
+			.modal.mod-voice-briefing .progress-header {
 				text-align: center;
 				margin-bottom: 20px;
 			}
-			.voice-briefing-progress-modal .progress-header h2 {
+			.modal.mod-voice-briefing .progress-header h2 {
 				margin: 0;
 				font-size: 1.4em;
+				color: var(--text-normal);
 			}
-			.voice-briefing-progress-modal .progress-bar-container {
+			.modal.mod-voice-briefing .progress-bar-container {
 				margin-bottom: 24px;
 			}
-			.voice-briefing-progress-modal .progress-bar {
+			.modal.mod-voice-briefing .progress-bar {
 				height: 8px;
 				background: var(--background-modifier-border);
 				border-radius: 4px;
 				overflow: hidden;
 			}
-			.voice-briefing-progress-modal .progress-fill {
+			.modal.mod-voice-briefing .progress-fill {
 				height: 100%;
 				width: 0%;
 				background: linear-gradient(90deg, #4CAF50, #8BC34A);
 				border-radius: 4px;
 				transition: width 0.3s ease;
 			}
-			.voice-briefing-progress-modal .steps-container {
+			.modal.mod-voice-briefing .steps-container {
 				display: flex;
 				flex-direction: column;
 				gap: 12px;
 				margin-bottom: 20px;
 			}
-			.voice-briefing-progress-modal .step-item {
+			.modal.mod-voice-briefing .step-item {
 				display: flex;
 				align-items: center;
 				padding: 12px 16px;
@@ -106,51 +115,56 @@ class ProgressModal extends Modal {
 				border-radius: 8px;
 				border-left: 4px solid var(--background-modifier-border);
 				transition: all 0.3s ease;
+				color: var(--text-normal);
 			}
-			.voice-briefing-progress-modal .step-item.active {
+			.modal.mod-voice-briefing .step-item.active {
 				border-left-color: #2196F3;
-				background: var(--background-primary);
-				box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+				background: var(--background-primary-alt);
+				box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 			}
-			.voice-briefing-progress-modal .step-item.completed {
+			.modal.mod-voice-briefing .step-item.completed {
 				border-left-color: #4CAF50;
+				background: rgba(76, 175, 80, 0.1);
 			}
-			.voice-briefing-progress-modal .step-item.error {
+			.modal.mod-voice-briefing .step-item.error {
 				border-left-color: #f44336;
+				background: rgba(244, 67, 54, 0.1);
 			}
-			.voice-briefing-progress-modal .step-item.skipped {
+			.modal.mod-voice-briefing .step-item.skipped {
 				opacity: 0.5;
 				border-left-color: var(--background-modifier-border);
 			}
-			.voice-briefing-progress-modal .step-icon {
+			.modal.mod-voice-briefing .step-icon {
 				font-size: 1.4em;
 				margin-right: 12px;
 				min-width: 30px;
 				text-align: center;
 			}
-			.voice-briefing-progress-modal .step-label {
+			.modal.mod-voice-briefing .step-label {
 				flex: 1;
 				font-weight: 500;
+				color: var(--text-normal);
 			}
-			.voice-briefing-progress-modal .step-status {
+			.modal.mod-voice-briefing .step-status {
 				font-size: 1.2em;
 				min-width: 24px;
 				text-align: center;
 			}
-			.voice-briefing-progress-modal .status-text {
+			.modal.mod-voice-briefing .status-text {
 				text-align: center;
 				color: var(--text-muted);
 				font-size: 0.9em;
-				padding: 10px;
+				padding: 12px;
 				background: var(--background-secondary);
 				border-radius: 6px;
+				margin-top: 8px;
 			}
-			.voice-briefing-progress-modal .step-item.active .step-icon {
-				animation: pulse 1s infinite;
+			.modal.mod-voice-briefing .step-item.active .step-icon {
+				animation: vb-pulse 1s infinite;
 			}
-			@keyframes pulse {
+			@keyframes vb-pulse {
 				0%, 100% { transform: scale(1); }
-				50% { transform: scale(1.1); }
+				50% { transform: scale(1.15); }
 			}
 		`;
 		document.head.appendChild(style);
@@ -430,20 +444,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
 
 				if (uploadResult.success && uploadResult.downloadUrl) {
-					// Use public URL for sharing
-					if (this.settings.linkFormat === 'html') {
-						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<audio controls src="${uploadResult.downloadUrl}"></audio>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*[View in Google Drive](${uploadResult.publicUrl})*\n`;
-					} else if (this.settings.linkFormat === 'direct') {
-						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n${uploadResult.downloadUrl}\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
-					} else { // markdown
-						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n[🔊 Play Audio](${uploadResult.downloadUrl})\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*[View in Google Drive](${uploadResult.publicUrl})*\n`;
-					}
+					// Always use HTML audio tag for direct playback in shared notes
+					// This ensures the audio can be played directly when the note is shared
+					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<audio controls style="width: 100%; max-width: 500px;">\n  <source src="${uploadResult.downloadUrl}" type="audio/mpeg">\n  Your browser does not support the audio element.\n</audio>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n\n[📥 Download Audio](${uploadResult.downloadUrl}) | [📁 View in Google Drive](${uploadResult.publicUrl})\n`;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
+					console.log('Audio embed created:', audioEmbed);
 				} else {
 					// Fallback to local file
 					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');
 					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*⚠️ Cloud upload failed - audio stored locally only*\n`;
+					console.log('Fallback to local file embed');
 				}
 			} else {
 				// Local file only
@@ -452,7 +463,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 
 			// Step 4: Embed audio in note
 			progressModal.setStep('embed', 'active', 'Embedding audio in note...');
-			await this.app.vault.modify(activeFile, content + audioEmbed);
+
+			console.log('Attempting to embed audio in note...');
+			console.log('Current content length:', content.length);
+			console.log('Audio embed to add:', audioEmbed);
+
+			const newContent = content + audioEmbed;
+			console.log('New content length:', newContent.length);
+
+			await this.app.vault.modify(activeFile, newContent);
+			console.log('Note modified successfully');
+
 			progressModal.setStep('embed', 'completed', 'Audio embedded in note');
 
 			// Show success
@@ -463,11 +484,12 @@ export default class VoiceBriefingPlugin extends Plugin {
 				progressModal.close();
 			}, 2000);
 
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Error generating voice briefing:', error);
+			console.error('Error stack:', error.stack);
 
 			// Mark current step as error
-			progressModal.showError(`❌ Error: ${error.message}`);
+			progressModal.showError(`❌ Error: ${error.message || 'Unknown error'}`);
 
 			// Don't auto-close on error so user can see what happened
 		}
