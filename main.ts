@@ -147,13 +147,44 @@ export default class VoiceBriefingPlugin extends Plugin {
 				throw new Error(ttsResult.error || 'TTS generation failed');
 			}
 
-			// Step 3: Embed audio in note
+			// Step 3: Upload to Google Drive if enabled
+			let audioEmbed = '';
+
+			if (this.settings.cloudSharingEnabled && this.settings.googleDriveConnected && this.settings.googleDriveToken) {
+				new Notice('☁️ Uploading to Google Drive...');
+
+				const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
+				const driveClient = new GoogleDriveClient({
+					accessToken: this.settings.googleDriveToken,
+					folderId: this.settings.googleDriveFolderId || undefined
+				});
+
+				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
+
+				if (uploadResult.success && uploadResult.downloadUrl) {
+					// Use public URL for sharing
+					if (this.settings.linkFormat === 'html') {
+						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<audio controls src="${uploadResult.downloadUrl}"></audio>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*[View in Google Drive](${uploadResult.publicUrl})*\n`;
+					} else if (this.settings.linkFormat === 'direct') {
+						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n${uploadResult.downloadUrl}\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
+					} else { // markdown
+						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n[🔊 Play Audio](${uploadResult.downloadUrl})\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*[View in Google Drive](${uploadResult.publicUrl})*\n`;
+					}
+
+					new Notice('✅ Voice briefing uploaded and shared!');
+				} else {
+					// Fallback to local file
+					new Notice('⚠️ Cloud upload failed, using local file');
+					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*⚠️ Cloud upload failed - audio stored locally only*\n`;
+				}
+			} else {
+				// Local file only
+				audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
+			}
+
+			// Step 4: Embed audio in note
 			new Notice('📄 Embedding audio in note...');
-			const audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
-
 			await this.app.vault.modify(activeFile, content + audioEmbed);
-
-			// TODO: Upload to cloud if enabled
 
 			new Notice('✅ Voice briefing generated successfully!');
 		} catch (error) {
@@ -372,25 +403,89 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					.setButtonText('Connect with Google')
 					.setCta()
 					.onClick(async () => {
-						// TODO: Implement OAuth flow
-						new Notice('Google Drive connection will be implemented soon');
+						new Notice('📋 Please follow these steps to connect Google Drive:\n\n1. Go to Google Cloud Console\n2. Create OAuth 2.0 credentials\n3. Get your access token\n4. Paste it below', 10000);
 					}));
 			} else {
-				connectionSetting.addButton(button => button
-					.setButtonText('Disconnect')
-					.setWarning()
-					.onClick(async () => {
-						this.plugin.settings.googleDriveConnected = false;
-						this.plugin.settings.googleDriveToken = '';
-						await this.plugin.saveSettings();
-						this.display();
-					}));
+				connectionSetting
+					.addButton(button => button
+						.setButtonText('Test Connection')
+						.onClick(async () => {
+							new Notice('🔄 Testing Google Drive connection...');
+							try {
+								const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
+								const client = new GoogleDriveClient({
+									accessToken: this.plugin.settings.googleDriveToken
+								});
+								const isConnected = await client.testConnection();
+								if (isConnected) {
+									const userInfo = await client.getUserInfo();
+									new Notice(`✅ Connected as ${userInfo?.email || 'Unknown user'}`);
+								} else {
+									new Notice('❌ Connection test failed');
+								}
+							} catch (error) {
+								new Notice(`❌ Connection test failed: ${error.message}`);
+							}
+						}))
+					.addButton(button => button
+						.setButtonText('Disconnect')
+						.setWarning()
+						.onClick(async () => {
+							this.plugin.settings.googleDriveConnected = false;
+							this.plugin.settings.googleDriveToken = '';
+							this.plugin.settings.googleDriveFolderId = '';
+							await this.plugin.saveSettings();
+							this.display();
+							new Notice('🔴 Disconnected from Google Drive');
+						}));
 			}
 
-			// Advanced Settings (collapsed)
-			const advancedDiv = containerEl.createDiv('voice-briefing-advanced');
-			advancedDiv.createEl('h3', {text: '▸ Advanced Settings'});
-			// TODO: Add collapsible advanced settings
+			// Access Token Input
+			new Setting(containerEl)
+				.setName('Access Token')
+				.setDesc('Paste your Google Drive OAuth 2.0 access token')
+				.addText(text => text
+					.setPlaceholder('ya29.a0...')
+					.setValue(this.plugin.settings.googleDriveToken)
+					.onChange(async (value) => {
+						this.plugin.settings.googleDriveToken = value;
+						this.plugin.settings.googleDriveConnected = value.length > 0;
+						await this.plugin.saveSettings();
+					})
+					.inputEl.type = 'password');
+
+			// Link Format Setting
+			new Setting(containerEl)
+				.setName('Link Format')
+				.setDesc('Choose how the audio link should be embedded in your note')
+				.addDropdown(dropdown => dropdown
+					.addOption('html', 'HTML Audio Player (Recommended)')
+					.addOption('markdown', 'Markdown Link')
+					.addOption('direct', 'Direct URL')
+					.setValue(this.plugin.settings.linkFormat)
+					.onChange(async (value: any) => {
+						this.plugin.settings.linkFormat = value;
+						await this.plugin.saveSettings();
+					}));
+
+			// Folder ID Setting
+			new Setting(containerEl)
+				.setName('Google Drive Folder ID (Optional)')
+				.setDesc('Leave empty to upload to root, or paste folder ID from Drive URL')
+				.addText(text => text
+					.setPlaceholder('1a2b3c4d5e6f...')
+					.setValue(this.plugin.settings.googleDriveFolderId || '')
+					.onChange(async (value) => {
+						this.plugin.settings.googleDriveFolderId = value;
+						await this.plugin.saveSettings();
+					}));
+
+			// Info box
+			const infoDiv = containerEl.createDiv('voice-briefing-info');
+			infoDiv.createEl('p', {
+				text: '💡 Tip: To find your folder ID, open the folder in Google Drive and copy the ID from the URL (the part after /folders/)',
+				cls: 'setting-item-description'
+			});
 		}
 	}
 
