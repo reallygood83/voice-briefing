@@ -84,22 +84,81 @@ export default class VoiceBriefingPlugin extends Plugin {
 			return;
 		}
 
+		// Additional validation for TTS
+		if (this.settings.ttsEngine === 'elevenlabs') {
+			if (!this.settings.elevenLabsApiKey) {
+				new Notice('Please set your ElevenLabs API key in settings');
+				return;
+			}
+			if (!this.settings.elevenLabsVoiceId) {
+				new Notice('Please set your ElevenLabs voice ID in settings');
+				return;
+			}
+		}
+
 		try {
-			new Notice('Generating voice briefing...');
+			new Notice('🎙️ Generating voice briefing...');
 
 			// Read note content
 			const content = await this.app.vault.read(activeFile);
 
-			// TODO: Generate script with AI
-			// TODO: Convert script to audio with TTS
-			// TODO: Save audio file
-			// TODO: Embed audio in note
+			// Step 1: Generate script with AI
+			new Notice('📝 Generating script with AI...');
+			const { ScriptGenerator } = await import('./src/ai/script-generator');
+			const scriptGenerator = new ScriptGenerator();
+
+			const scriptResult = await scriptGenerator.generate({
+				content: content,
+				language: this.settings.language,
+				style: this.settings.briefingStyle,
+				customPrompt: this.settings.customStylePrompt,
+				provider: this.settings.aiProvider,
+				apiKey: this.settings.apiKey,
+				modelName: this.settings.modelName
+			});
+
+			// Step 2: Convert script to audio with TTS
+			new Notice(`🔊 Converting to audio (${scriptResult.estimatedDuration}s)...`);
+			const { TTSGenerator } = await import('./src/tts/tts-generator');
+			const ttsGenerator = new TTSGenerator();
+
+			// Prepare audio file path
+			const audioFileName = `${activeFile.basename}-briefing.mp3`;
+			const audioPath = `${this.app.vault.configDir}/voice-briefings/${audioFileName}`;
+
+			// Ensure directory exists
+			const fs = require('fs');
+			const path = require('path');
+			const audioDir = path.dirname(audioPath);
+			if (!fs.existsSync(audioDir)) {
+				fs.mkdirSync(audioDir, { recursive: true });
+			}
+
+			const ttsResult = await ttsGenerator.generate({
+				engine: this.settings.ttsEngine,
+				text: scriptResult.script,
+				outputPath: audioPath,
+				edgeVoice: this.settings.edgeVoice,
+				elevenLabsApiKey: this.settings.elevenLabsApiKey,
+				elevenLabsVoiceId: this.settings.elevenLabsVoiceId
+			});
+
+			if (!ttsResult.success) {
+				throw new Error(ttsResult.error || 'TTS generation failed');
+			}
+
+			// Step 3: Embed audio in note
+			new Notice('📄 Embedding audio in note...');
+			const audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
+
+			await this.app.vault.modify(activeFile, content + audioEmbed);
+
 			// TODO: Upload to cloud if enabled
 
-			new Notice('Voice briefing generated successfully!');
+			new Notice('✅ Voice briefing generated successfully!');
 		} catch (error) {
 			console.error('Error generating voice briefing:', error);
-			new Notice('Failed to generate voice briefing. Check console for details.');
+			new Notice(`❌ Failed to generate voice briefing: ${error.message}`);
 		}
 	}
 
