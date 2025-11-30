@@ -4037,8 +4037,14 @@ var ProgressModal = class extends import_obsidian5.Modal {
     const { contentEl, modalEl } = this;
     contentEl.empty();
     modalEl.addClass("mod-voice-briefing");
+    contentEl.addClass("voice-briefing-content");
+    contentEl.style.padding = "24px";
+    contentEl.style.minWidth = "450px";
+    contentEl.style.color = "var(--text-normal)";
     const header = contentEl.createDiv({ cls: "progress-header" });
-    header.createEl("h2", { text: "\u{1F399}\uFE0F Voice Briefing Generator" });
+    const h2 = header.createEl("h2", { text: "\u{1F399}\uFE0F Voice Briefing Generator" });
+    h2.style.color = "var(--text-normal)";
+    h2.style.marginBottom = "20px";
     const progressContainer = contentEl.createDiv({ cls: "progress-bar-container" });
     this.progressBar = progressContainer.createDiv({ cls: "progress-bar" });
     this.progressFill = this.progressBar.createDiv({ cls: "progress-fill" });
@@ -4061,96 +4067,95 @@ var ProgressModal = class extends import_obsidian5.Modal {
     const style = document.createElement("style");
     style.id = "voice-briefing-modal-styles";
     style.textContent = `
-			.modal.mod-voice-briefing .modal-content {
-				padding: 24px;
-				min-width: 420px;
-				background: var(--background-primary);
-				color: var(--text-normal);
+			/* Direct styling for voice briefing modal */
+			.voice-briefing-content {
+				background: var(--background-primary) !important;
+				color: var(--text-normal) !important;
 			}
-			.modal.mod-voice-briefing .progress-header {
+			.voice-briefing-content .progress-header {
 				text-align: center;
 				margin-bottom: 20px;
 			}
-			.modal.mod-voice-briefing .progress-header h2 {
+			.voice-briefing-content .progress-header h2 {
 				margin: 0;
 				font-size: 1.4em;
-				color: var(--text-normal);
+				color: var(--text-normal) !important;
 			}
-			.modal.mod-voice-briefing .progress-bar-container {
+			.voice-briefing-content .progress-bar-container {
 				margin-bottom: 24px;
 			}
-			.modal.mod-voice-briefing .progress-bar {
+			.voice-briefing-content .progress-bar {
 				height: 8px;
-				background: var(--background-modifier-border);
+				background: var(--background-modifier-border) !important;
 				border-radius: 4px;
 				overflow: hidden;
 			}
-			.modal.mod-voice-briefing .progress-fill {
+			.voice-briefing-content .progress-fill {
 				height: 100%;
 				width: 0%;
-				background: linear-gradient(90deg, #4CAF50, #8BC34A);
+				background: linear-gradient(90deg, #4CAF50, #8BC34A) !important;
 				border-radius: 4px;
 				transition: width 0.3s ease;
 			}
-			.modal.mod-voice-briefing .steps-container {
+			.voice-briefing-content .steps-container {
 				display: flex;
 				flex-direction: column;
 				gap: 12px;
 				margin-bottom: 20px;
 			}
-			.modal.mod-voice-briefing .step-item {
+			.voice-briefing-content .step-item {
 				display: flex;
 				align-items: center;
 				padding: 12px 16px;
-				background: var(--background-secondary);
+				background: var(--background-secondary) !important;
 				border-radius: 8px;
 				border-left: 4px solid var(--background-modifier-border);
 				transition: all 0.3s ease;
-				color: var(--text-normal);
+				color: var(--text-normal) !important;
 			}
-			.modal.mod-voice-briefing .step-item.active {
-				border-left-color: #2196F3;
-				background: var(--background-primary-alt);
-				box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+			.voice-briefing-content .step-item.active {
+				border-left-color: #2196F3 !important;
+				background: var(--background-primary-alt) !important;
+				box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3) !important;
 			}
-			.modal.mod-voice-briefing .step-item.completed {
-				border-left-color: #4CAF50;
-				background: rgba(76, 175, 80, 0.1);
+			.voice-briefing-content .step-item.completed {
+				border-left-color: #4CAF50 !important;
+				background: rgba(76, 175, 80, 0.15) !important;
 			}
-			.modal.mod-voice-briefing .step-item.error {
-				border-left-color: #f44336;
-				background: rgba(244, 67, 54, 0.1);
+			.voice-briefing-content .step-item.error {
+				border-left-color: #f44336 !important;
+				background: rgba(244, 67, 54, 0.15) !important;
 			}
-			.modal.mod-voice-briefing .step-item.skipped {
+			.voice-briefing-content .step-item.skipped {
 				opacity: 0.5;
 				border-left-color: var(--background-modifier-border);
 			}
-			.modal.mod-voice-briefing .step-icon {
+			.voice-briefing-content .step-icon {
 				font-size: 1.4em;
 				margin-right: 12px;
 				min-width: 30px;
 				text-align: center;
 			}
-			.modal.mod-voice-briefing .step-label {
+			.voice-briefing-content .step-label {
 				flex: 1;
 				font-weight: 500;
-				color: var(--text-normal);
+				color: var(--text-normal) !important;
 			}
-			.modal.mod-voice-briefing .step-status {
+			.voice-briefing-content .step-status {
 				font-size: 1.2em;
 				min-width: 24px;
 				text-align: center;
 			}
-			.modal.mod-voice-briefing .status-text {
+			.voice-briefing-content .status-text {
 				text-align: center;
-				color: var(--text-muted);
+				color: var(--text-muted) !important;
 				font-size: 0.9em;
 				padding: 12px;
-				background: var(--background-secondary);
+				background: var(--background-secondary) !important;
 				border-radius: 6px;
 				margin-top: 8px;
 			}
-			.modal.mod-voice-briefing .step-item.active .step-icon {
+			.voice-briefing-content .step-item.active .step-icon {
 				animation: vb-pulse 1s infinite;
 			}
 			@keyframes vb-pulse {
