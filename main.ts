@@ -130,14 +130,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
 			const ttsGenerator = new TTSGenerator();
 
-			// Prepare audio file path
+			// Prepare audio file path with ABSOLUTE path
 			const audioFileName = `${activeFile.basename}-briefing.mp3`;
-			const audioPath = `${this.app.vault.configDir}/voice-briefings/${audioFileName}`;
-
-			// Ensure directory exists
 			const fs = require('fs');
 			const path = require('path');
-			const audioDir = path.dirname(audioPath);
+
+			// Get vault's absolute base path
+			const vaultBasePath = (this.app.vault.adapter as any).basePath;
+			const audioDir = path.join(vaultBasePath, this.app.vault.configDir, 'voice-briefings');
+			const audioPath = path.join(audioDir, audioFileName);
+
+			// Ensure directory exists
 			if (!fs.existsSync(audioDir)) {
 				fs.mkdirSync(audioDir, { recursive: true });
 			}
