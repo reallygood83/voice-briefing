@@ -336,39 +336,34 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
 
 				if (uploadResult.success && uploadResult.fileId) {
-					// Google Drive audio embed - using the embed player URL format
-					// Format: https://drive.google.com/file/d/FILE_ID/preview for full player
-					const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
+					// Google Drive audio embed using <audio> tag with direct download URL
+					// Format: https://drive.google.com/uc?export=download&id=FILE_ID
+					// This works in Obsidian preview mode and when shared via share.note.sx
+					const audioStreamUrl = `https://drive.google.com/uc?export=download&id=${uploadResult.fileId}`;
 					const driveViewUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/view`;
 
-					// Use iframe with proper dimensions for audio player
-					// Height 100 works well for Google Drive audio player
 					audioEmbed = `
 
 ---
 
 ## 🎧 Voice Briefing
 
-<iframe
-	src="${driveEmbedUrl}"
-	width="640"
-	height="100"
-	frameborder="0"
-	allowfullscreen="true"
-	allow="autoplay; encrypted-media">
-</iframe>
+<audio controls preload="metadata" style="width: 100%;">
+  <source src="${audioStreamUrl}" type="audio/mpeg">
+  Your browser does not support the audio element.
+</audio>
 
 > 📅 *Generated: ${new Date().toLocaleString()}*
 > ⏱️ *Duration: ~${scriptResult.estimatedDuration}s*
 
-**Links:** [🔗 Open in Google Drive](${driveViewUrl}) | [📥 Download](${uploadResult.downloadUrl || driveViewUrl})
+**Links:** [🔗 Open in Google Drive](${driveViewUrl}) | [📥 Download](${audioStreamUrl})
 
 ---
 `;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
 					console.log('Audio embed created with fileId:', uploadResult.fileId);
-					console.log('Embed URL:', driveEmbedUrl);
+					console.log('Audio stream URL:', audioStreamUrl);
 				} else {
 					// Fallback to local file
 					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');

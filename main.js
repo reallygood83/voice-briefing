@@ -4249,7 +4249,7 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
         });
         const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, "audio/mpeg");
         if (uploadResult.success && uploadResult.fileId) {
-          const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
+          const audioStreamUrl = `https://drive.google.com/uc?export=download&id=${uploadResult.fileId}`;
           const driveViewUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/view`;
           audioEmbed = `
 
@@ -4257,25 +4257,21 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
 
 ## \u{1F3A7} Voice Briefing
 
-<iframe
-	src="${driveEmbedUrl}"
-	width="640"
-	height="100"
-	frameborder="0"
-	allowfullscreen="true"
-	allow="autoplay; encrypted-media">
-</iframe>
+<audio controls preload="metadata" style="width: 100%;">
+  <source src="${audioStreamUrl}" type="audio/mpeg">
+  Your browser does not support the audio element.
+</audio>
 
 > \u{1F4C5} *Generated: ${new Date().toLocaleString()}*
 > \u23F1\uFE0F *Duration: ~${scriptResult.estimatedDuration}s*
 
-**Links:** [\u{1F517} Open in Google Drive](${driveViewUrl}) | [\u{1F4E5} Download](${uploadResult.downloadUrl || driveViewUrl})
+**Links:** [\u{1F517} Open in Google Drive](${driveViewUrl}) | [\u{1F4E5} Download](${audioStreamUrl})
 
 ---
 `;
           progressModal.setStep("upload", "completed", "Uploaded to Google Drive");
           console.log("Audio embed created with fileId:", uploadResult.fileId);
-          console.log("Embed URL:", driveEmbedUrl);
+          console.log("Audio stream URL:", audioStreamUrl);
         } else {
           progressModal.setStep("upload", "error", "Cloud upload failed, using local file");
           audioEmbed = `
