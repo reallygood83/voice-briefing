@@ -3881,8 +3881,16 @@ Content-Transfer-Encoding: base64\r
           const fileData = response.json;
           const fileId = fileData.id;
           await this.makeFilePublic(fileId);
+          const fileMetaResponse = await (0, import_obsidian4.requestUrl)({
+            url: `${this.API_URL}/files/${fileId}?fields=webContentLink,webViewLink`,
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`
+            }
+          });
+          const fileMeta = fileMetaResponse.json;
           const publicUrl = `https://drive.google.com/file/d/${fileId}/view`;
-          const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+          const downloadUrl = fileMeta.webContentLink || `https://drive.google.com/uc?export=view&id=${fileId}`;
           new import_obsidian4.Notice("\u2601\uFE0F File uploaded to Google Drive successfully");
           return {
             success: true,
@@ -4241,14 +4249,12 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
         });
         const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, "audio/mpeg");
         if (uploadResult.success && uploadResult.downloadUrl) {
+          const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
           audioEmbed = `
 
 ## \u{1F3A7} Voice Briefing
 
-<audio controls style="width: 100%; max-width: 500px;">
-  <source src="${uploadResult.downloadUrl}" type="audio/mpeg">
-  Your browser does not support the audio element.
-</audio>
+<iframe src="${driveEmbedUrl}" width="100%" height="80" allow="autoplay" frameborder="0" style="border-radius: 8px;"></iframe>
 
 *Generated on ${new Date().toLocaleString()} \u2022 Duration: ~${scriptResult.estimatedDuration}s*
 

@@ -336,9 +336,11 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
 
 				if (uploadResult.success && uploadResult.downloadUrl) {
-					// Always use HTML audio tag for direct playback in shared notes
-					// This ensures the audio can be played directly when the note is shared
-					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<audio controls style="width: 100%; max-width: 500px;">\n  <source src="${uploadResult.downloadUrl}" type="audio/mpeg">\n  Your browser does not support the audio element.\n</audio>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n\n[📥 Download Audio](${uploadResult.downloadUrl}) | [📁 View in Google Drive](${uploadResult.publicUrl})\n`;
+					// Use Google Drive audio player embed (iframe) for web playback
+					// This works better than <audio> tag which has CORS issues with Google Drive
+					const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
+
+					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<iframe src="${driveEmbedUrl}" width="100%" height="80" allow="autoplay" frameborder="0" style="border-radius: 8px;"></iframe>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n\n[📥 Download Audio](${uploadResult.downloadUrl}) | [📁 View in Google Drive](${uploadResult.publicUrl})\n`;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
 					console.log('Audio embed created:', audioEmbed);

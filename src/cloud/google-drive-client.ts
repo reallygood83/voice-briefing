@@ -117,9 +117,24 @@ export class GoogleDriveClient {
 			// Step 3: Make file publicly accessible
 			await this.makeFilePublic(fileId);
 
-			// Step 4: Generate public URLs
+			// Step 4: Get the webContentLink for direct streaming
+			// We need to fetch file metadata to get the proper streaming URL
+			const fileMetaResponse = await requestUrl({
+				url: `${this.API_URL}/files/${fileId}?fields=webContentLink,webViewLink`,
+				method: 'GET',
+				headers: {
+					'Authorization': `Bearer ${accessToken}`
+				}
+			});
+
+			const fileMeta = fileMetaResponse.json;
+
+			// Step 5: Generate public URLs
 			const publicUrl = `https://drive.google.com/file/d/${fileId}/view`;
-			const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+			// Use webContentLink for direct audio streaming (works with <audio> tag)
+			// Format: https://drive.google.com/uc?export=download&id=FILE_ID
+			// But for streaming, we need: https://drive.google.com/uc?export=view&id=FILE_ID
+			const downloadUrl = fileMeta.webContentLink || `https://drive.google.com/uc?export=view&id=${fileId}`;
 
 			new Notice('☁️ File uploaded to Google Drive successfully');
 
