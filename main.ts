@@ -1,4 +1,238 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal } from 'obsidian';
+
+// Progress Modal for showing generation progress
+class ProgressModal extends Modal {
+	private stepsContainer!: HTMLElement;
+	private currentStepEl!: HTMLElement;
+	private progressBar!: HTMLElement;
+	private progressFill!: HTMLElement;
+	private statusText!: HTMLElement;
+	private steps: { id: string; label: string; icon: string }[] = [
+		{ id: 'script', label: 'Generating AI Script', icon: '📝' },
+		{ id: 'audio', label: 'Converting to Audio', icon: '🔊' },
+		{ id: 'upload', label: 'Uploading to Cloud', icon: '☁️' },
+		{ id: 'embed', label: 'Embedding in Note', icon: '📄' },
+	];
+	private stepElements: Map<string, HTMLElement> = new Map();
+	private hasCloudUpload: boolean;
+
+	constructor(app: App, hasCloudUpload: boolean = false) {
+		super(app);
+		this.hasCloudUpload = hasCloudUpload;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('voice-briefing-progress-modal');
+
+		// Header
+		const header = contentEl.createDiv({ cls: 'progress-header' });
+		header.createEl('h2', { text: '🎙️ Voice Briefing Generator' });
+
+		// Progress bar
+		const progressContainer = contentEl.createDiv({ cls: 'progress-bar-container' });
+		this.progressBar = progressContainer.createDiv({ cls: 'progress-bar' });
+		this.progressFill = this.progressBar.createDiv({ cls: 'progress-fill' });
+
+		// Steps container
+		this.stepsContainer = contentEl.createDiv({ cls: 'steps-container' });
+
+		// Filter steps based on cloud upload
+		const activeSteps = this.hasCloudUpload
+			? this.steps
+			: this.steps.filter(s => s.id !== 'upload');
+
+		activeSteps.forEach((step, index) => {
+			const stepEl = this.stepsContainer.createDiv({ cls: 'step-item' });
+
+			const iconEl = stepEl.createSpan({ cls: 'step-icon', text: step.icon });
+			const labelEl = stepEl.createSpan({ cls: 'step-label', text: step.label });
+			const statusEl = stepEl.createSpan({ cls: 'step-status' });
+
+			stepEl.dataset.stepId = step.id;
+			this.stepElements.set(step.id, stepEl);
+		});
+
+		// Current status
+		this.statusText = contentEl.createDiv({ cls: 'status-text', text: 'Initializing...' });
+
+		// Add styles
+		this.addStyles();
+	}
+
+	private addStyles() {
+		const style = document.createElement('style');
+		style.textContent = `
+			.voice-briefing-progress-modal {
+				padding: 20px;
+				min-width: 400px;
+			}
+			.voice-briefing-progress-modal .progress-header {
+				text-align: center;
+				margin-bottom: 20px;
+			}
+			.voice-briefing-progress-modal .progress-header h2 {
+				margin: 0;
+				font-size: 1.4em;
+			}
+			.voice-briefing-progress-modal .progress-bar-container {
+				margin-bottom: 24px;
+			}
+			.voice-briefing-progress-modal .progress-bar {
+				height: 8px;
+				background: var(--background-modifier-border);
+				border-radius: 4px;
+				overflow: hidden;
+			}
+			.voice-briefing-progress-modal .progress-fill {
+				height: 100%;
+				width: 0%;
+				background: linear-gradient(90deg, #4CAF50, #8BC34A);
+				border-radius: 4px;
+				transition: width 0.3s ease;
+			}
+			.voice-briefing-progress-modal .steps-container {
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				margin-bottom: 20px;
+			}
+			.voice-briefing-progress-modal .step-item {
+				display: flex;
+				align-items: center;
+				padding: 12px 16px;
+				background: var(--background-secondary);
+				border-radius: 8px;
+				border-left: 4px solid var(--background-modifier-border);
+				transition: all 0.3s ease;
+			}
+			.voice-briefing-progress-modal .step-item.active {
+				border-left-color: #2196F3;
+				background: var(--background-primary);
+				box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+			}
+			.voice-briefing-progress-modal .step-item.completed {
+				border-left-color: #4CAF50;
+			}
+			.voice-briefing-progress-modal .step-item.error {
+				border-left-color: #f44336;
+			}
+			.voice-briefing-progress-modal .step-item.skipped {
+				opacity: 0.5;
+				border-left-color: var(--background-modifier-border);
+			}
+			.voice-briefing-progress-modal .step-icon {
+				font-size: 1.4em;
+				margin-right: 12px;
+				min-width: 30px;
+				text-align: center;
+			}
+			.voice-briefing-progress-modal .step-label {
+				flex: 1;
+				font-weight: 500;
+			}
+			.voice-briefing-progress-modal .step-status {
+				font-size: 1.2em;
+				min-width: 24px;
+				text-align: center;
+			}
+			.voice-briefing-progress-modal .status-text {
+				text-align: center;
+				color: var(--text-muted);
+				font-size: 0.9em;
+				padding: 10px;
+				background: var(--background-secondary);
+				border-radius: 6px;
+			}
+			.voice-briefing-progress-modal .step-item.active .step-icon {
+				animation: pulse 1s infinite;
+			}
+			@keyframes pulse {
+				0%, 100% { transform: scale(1); }
+				50% { transform: scale(1.1); }
+			}
+		`;
+		document.head.appendChild(style);
+	}
+
+	setStep(stepId: string, status: 'pending' | 'active' | 'completed' | 'error' | 'skipped', message?: string) {
+		const stepEl = this.stepElements.get(stepId);
+		if (!stepEl) return;
+
+		// Remove all status classes
+		stepEl.removeClass('pending', 'active', 'completed', 'error', 'skipped');
+		stepEl.addClass(status);
+
+		// Update status icon
+		const statusEl = stepEl.querySelector('.step-status') as HTMLElement;
+		if (statusEl) {
+			switch (status) {
+				case 'active':
+					statusEl.textContent = '⏳';
+					break;
+				case 'completed':
+					statusEl.textContent = '✅';
+					break;
+				case 'error':
+					statusEl.textContent = '❌';
+					break;
+				case 'skipped':
+					statusEl.textContent = '⏭️';
+					break;
+				default:
+					statusEl.textContent = '';
+			}
+		}
+
+		// Update status text
+		if (message) {
+			this.statusText.textContent = message;
+		}
+
+		// Update progress bar
+		this.updateProgressBar();
+	}
+
+	private updateProgressBar() {
+		const totalSteps = this.hasCloudUpload ? 4 : 3;
+		let completedSteps = 0;
+
+		this.stepElements.forEach((el) => {
+			if (el.hasClass('completed')) completedSteps++;
+		});
+
+		const percentage = (completedSteps / totalSteps) * 100;
+		this.progressFill.style.width = `${percentage}%`;
+	}
+
+	setProgress(percentage: number) {
+		this.progressFill.style.width = `${percentage}%`;
+	}
+
+	setStatusText(text: string) {
+		this.statusText.textContent = text;
+	}
+
+	showSuccess(message: string) {
+		this.statusText.textContent = message;
+		this.statusText.style.background = 'rgba(76, 175, 80, 0.2)';
+		this.statusText.style.color = '#4CAF50';
+		this.progressFill.style.width = '100%';
+		this.progressFill.style.background = 'linear-gradient(90deg, #4CAF50, #8BC34A)';
+	}
+
+	showError(message: string) {
+		this.statusText.textContent = message;
+		this.statusText.style.background = 'rgba(244, 67, 54, 0.2)';
+		this.statusText.style.color = '#f44336';
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
 
 // Plugin settings interface
 interface VoiceBriefingSettings {
@@ -104,14 +338,22 @@ export default class VoiceBriefingPlugin extends Plugin {
 			}
 		}
 
-		try {
-			new Notice('🎙️ Generating voice briefing...');
+		// Check if cloud upload is enabled
+		const hasCloudUpload = !!(this.settings.cloudSharingEnabled &&
+			this.settings.googleDriveConnected &&
+			this.settings.googleDriveToken);
 
+		// Create and open progress modal
+		const progressModal = new ProgressModal(this.app, hasCloudUpload);
+		progressModal.open();
+
+		try {
 			// Read note content
 			const content = await this.app.vault.read(activeFile);
 
 			// Step 1: Generate script with AI
-			new Notice('📝 Generating script with AI...');
+			progressModal.setStep('script', 'active', `Generating script for "${activeFile.basename}"...`);
+
 			const { ScriptGenerator } = await import('./src/ai/script-generator');
 			const scriptGenerator = new ScriptGenerator();
 
@@ -125,8 +367,11 @@ export default class VoiceBriefingPlugin extends Plugin {
 				modelName: this.settings.modelName
 			});
 
+			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
+
 			// Step 2: Convert script to audio with TTS
-			new Notice(`🔊 Converting to audio (${scriptResult.estimatedDuration}s)...`);
+			progressModal.setStep('audio', 'active', `Converting to audio with ${this.settings.ttsEngine === 'edge' ? 'Edge TTS' : 'ElevenLabs'}...`);
+
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
 			const ttsGenerator = new TTSGenerator();
 
@@ -158,11 +403,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 				throw new Error(ttsResult.error || 'TTS generation failed');
 			}
 
+			progressModal.setStep('audio', 'completed', 'Audio file created successfully');
+
 			// Step 3: Upload to Google Drive if enabled
 			let audioEmbed = '';
 
-			if (this.settings.cloudSharingEnabled && this.settings.googleDriveConnected && this.settings.googleDriveToken) {
-				new Notice('☁️ Uploading to Google Drive...');
+			if (hasCloudUpload) {
+				progressModal.setStep('upload', 'active', 'Uploading to Google Drive...');
 
 				const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
 				const driveClient = new GoogleDriveClient({
@@ -192,10 +439,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 						audioEmbed = `\n\n## 🎧 Voice Briefing\n\n[🔊 Play Audio](${uploadResult.downloadUrl})\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*[View in Google Drive](${uploadResult.publicUrl})*\n`;
 					}
 
-					new Notice('✅ Voice briefing uploaded and shared!');
+					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
 				} else {
 					// Fallback to local file
-					new Notice('⚠️ Cloud upload failed, using local file');
+					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');
 					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*⚠️ Cloud upload failed - audio stored locally only*\n`;
 				}
 			} else {
@@ -204,13 +451,25 @@ export default class VoiceBriefingPlugin extends Plugin {
 			}
 
 			// Step 4: Embed audio in note
-			new Notice('📄 Embedding audio in note...');
+			progressModal.setStep('embed', 'active', 'Embedding audio in note...');
 			await this.app.vault.modify(activeFile, content + audioEmbed);
+			progressModal.setStep('embed', 'completed', 'Audio embedded in note');
 
-			new Notice('✅ Voice briefing generated successfully!');
+			// Show success
+			progressModal.showSuccess('✅ Voice briefing generated successfully!');
+
+			// Auto-close modal after 2 seconds
+			setTimeout(() => {
+				progressModal.close();
+			}, 2000);
+
 		} catch (error) {
 			console.error('Error generating voice briefing:', error);
-			new Notice(`❌ Failed to generate voice briefing: ${error.message}`);
+
+			// Mark current step as error
+			progressModal.showError(`❌ Error: ${error.message}`);
+
+			// Don't auto-close on error so user can see what happened
 		}
 	}
 
