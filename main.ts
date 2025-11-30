@@ -435,6 +435,8 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.googleDriveClientId = value;
 						await this.plugin.saveSettings();
+						// Refresh UI to update connection button state
+						this.display();
 					}));
 
 			new Setting(containerEl)
@@ -446,6 +448,8 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.googleDriveClientSecret = value;
 							await this.plugin.saveSettings();
+							// Refresh UI to update connection button state
+							this.display();
 						});
 					text.inputEl.type = 'password';
 					return text;
