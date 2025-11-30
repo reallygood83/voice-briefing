@@ -5,7 +5,6 @@ class ProgressModal extends Modal {
 	private stepsContainer!: HTMLElement;
 	private currentStepEl!: HTMLElement;
 	private progressBar!: HTMLElement;
-	private progressFill!: HTMLElement;
 	private statusText!: HTMLElement;
 	private steps: { id: string; label: string; icon: string }[] = [
 		{ id: 'script', label: 'Generating AI Script', icon: '📝' },
@@ -22,31 +21,26 @@ class ProgressModal extends Modal {
 	}
 
 	onOpen() {
-		const { contentEl, modalEl } = this;
+		const { contentEl } = this;
 		contentEl.empty();
+		contentEl.addClass('voice-briefing-progress-modal');
 
-		// Add class to modal and content for proper styling
-		modalEl.addClass('mod-voice-briefing');
-		contentEl.addClass('voice-briefing-content');
+		// Title
+		contentEl.createEl('h2', {
+			text: '🎙️ Voice Briefing Generator',
+			cls: 'voice-briefing-progress-title'
+		});
 
-		// Set explicit styles on contentEl
-		contentEl.style.padding = '24px';
-		contentEl.style.minWidth = '450px';
-		contentEl.style.color = 'var(--text-normal)';
-
-		// Header
-		const header = contentEl.createDiv({ cls: 'progress-header' });
-		const h2 = header.createEl('h2', { text: '🎙️ Voice Briefing Generator' });
-		h2.style.color = 'var(--text-normal)';
-		h2.style.marginBottom = '20px';
-
-		// Progress bar
-		const progressContainer = contentEl.createDiv({ cls: 'progress-bar-container' });
-		this.progressBar = progressContainer.createDiv({ cls: 'progress-bar' });
-		this.progressFill = this.progressBar.createDiv({ cls: 'progress-fill' });
+		// Progress bar container
+		const progressContainer = contentEl.createDiv({ cls: 'voice-briefing-progress-container' });
+		this.progressBar = progressContainer.createDiv({ cls: 'voice-briefing-progress-bar' });
+		this.statusText = progressContainer.createDiv({
+			cls: 'voice-briefing-progress-percentage',
+			text: '0%'
+		});
 
 		// Steps container
-		this.stepsContainer = contentEl.createDiv({ cls: 'steps-container' });
+		this.stepsContainer = contentEl.createDiv({ cls: 'voice-briefing-steps-container' });
 
 		// Filter steps based on cloud upload
 		const activeSteps = this.hasCloudUpload
@@ -54,127 +48,20 @@ class ProgressModal extends Modal {
 			: this.steps.filter(s => s.id !== 'upload');
 
 		activeSteps.forEach((step, index) => {
-			const stepEl = this.stepsContainer.createDiv({ cls: 'step-item' });
-
-			const iconEl = stepEl.createSpan({ cls: 'step-icon', text: step.icon });
-			const labelEl = stepEl.createSpan({ cls: 'step-label', text: step.label });
-			const statusEl = stepEl.createSpan({ cls: 'step-status' });
+			const stepEl = this.stepsContainer.createDiv({ cls: 'voice-briefing-step-item' });
+			stepEl.createSpan({ cls: 'voice-briefing-step-icon', text: '⏳' });
+			stepEl.createSpan({ cls: 'voice-briefing-step-name', text: `${step.icon} ${step.label}` });
+			stepEl.createSpan({ cls: 'voice-briefing-step-status', text: '' });
 
 			stepEl.dataset.stepId = step.id;
 			this.stepElements.set(step.id, stepEl);
 		});
 
-		// Current status
-		this.statusText = contentEl.createDiv({ cls: 'status-text', text: 'Initializing...' });
-
-		// Add styles
-		this.addStyles();
-	}
-
-	private addStyles() {
-		// Check if styles already exist
-		if (document.getElementById('voice-briefing-modal-styles')) return;
-
-		const style = document.createElement('style');
-		style.id = 'voice-briefing-modal-styles';
-		style.textContent = `
-			/* Direct styling for voice briefing modal */
-			.voice-briefing-content {
-				background: var(--background-primary) !important;
-				color: var(--text-normal) !important;
-			}
-			.voice-briefing-content .progress-header {
-				text-align: center;
-				margin-bottom: 20px;
-			}
-			.voice-briefing-content .progress-header h2 {
-				margin: 0;
-				font-size: 1.4em;
-				color: var(--text-normal) !important;
-			}
-			.voice-briefing-content .progress-bar-container {
-				margin-bottom: 24px;
-			}
-			.voice-briefing-content .progress-bar {
-				height: 8px;
-				background: var(--background-modifier-border) !important;
-				border-radius: 4px;
-				overflow: hidden;
-			}
-			.voice-briefing-content .progress-fill {
-				height: 100%;
-				width: 0%;
-				background: linear-gradient(90deg, #4CAF50, #8BC34A) !important;
-				border-radius: 4px;
-				transition: width 0.3s ease;
-			}
-			.voice-briefing-content .steps-container {
-				display: flex;
-				flex-direction: column;
-				gap: 12px;
-				margin-bottom: 20px;
-			}
-			.voice-briefing-content .step-item {
-				display: flex;
-				align-items: center;
-				padding: 12px 16px;
-				background: var(--background-secondary) !important;
-				border-radius: 8px;
-				border-left: 4px solid var(--background-modifier-border);
-				transition: all 0.3s ease;
-				color: var(--text-normal) !important;
-			}
-			.voice-briefing-content .step-item.active {
-				border-left-color: #2196F3 !important;
-				background: var(--background-primary-alt) !important;
-				box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3) !important;
-			}
-			.voice-briefing-content .step-item.completed {
-				border-left-color: #4CAF50 !important;
-				background: rgba(76, 175, 80, 0.15) !important;
-			}
-			.voice-briefing-content .step-item.error {
-				border-left-color: #f44336 !important;
-				background: rgba(244, 67, 54, 0.15) !important;
-			}
-			.voice-briefing-content .step-item.skipped {
-				opacity: 0.5;
-				border-left-color: var(--background-modifier-border);
-			}
-			.voice-briefing-content .step-icon {
-				font-size: 1.4em;
-				margin-right: 12px;
-				min-width: 30px;
-				text-align: center;
-			}
-			.voice-briefing-content .step-label {
-				flex: 1;
-				font-weight: 500;
-				color: var(--text-normal) !important;
-			}
-			.voice-briefing-content .step-status {
-				font-size: 1.2em;
-				min-width: 24px;
-				text-align: center;
-			}
-			.voice-briefing-content .status-text {
-				text-align: center;
-				color: var(--text-muted) !important;
-				font-size: 0.9em;
-				padding: 12px;
-				background: var(--background-secondary) !important;
-				border-radius: 6px;
-				margin-top: 8px;
-			}
-			.voice-briefing-content .step-item.active .step-icon {
-				animation: vb-pulse 1s infinite;
-			}
-			@keyframes vb-pulse {
-				0%, 100% { transform: scale(1); }
-				50% { transform: scale(1.15); }
-			}
-		`;
-		document.head.appendChild(style);
+		// Current task status
+		this.currentStepEl = contentEl.createDiv({
+			cls: 'voice-briefing-current-task',
+			text: 'Initializing...'
+		});
 	}
 
 	setStep(stepId: string, status: 'pending' | 'active' | 'completed' | 'error' | 'skipped', message?: string) {
@@ -185,30 +72,30 @@ class ProgressModal extends Modal {
 		stepEl.removeClass('pending', 'active', 'completed', 'error', 'skipped');
 		stepEl.addClass(status);
 
-		// Update status icon
-		const statusEl = stepEl.querySelector('.step-status') as HTMLElement;
-		if (statusEl) {
+		// Update icon
+		const iconEl = stepEl.querySelector('.voice-briefing-step-icon') as HTMLElement;
+		if (iconEl) {
 			switch (status) {
 				case 'active':
-					statusEl.textContent = '⏳';
+					iconEl.textContent = '🔄';
 					break;
 				case 'completed':
-					statusEl.textContent = '✅';
+					iconEl.textContent = '✅';
 					break;
 				case 'error':
-					statusEl.textContent = '❌';
+					iconEl.textContent = '❌';
 					break;
 				case 'skipped':
-					statusEl.textContent = '⏭️';
+					iconEl.textContent = '⏭️';
 					break;
 				default:
-					statusEl.textContent = '';
+					iconEl.textContent = '⏳';
 			}
 		}
 
-		// Update status text
+		// Update current task message
 		if (message) {
-			this.statusText.textContent = message;
+			this.currentStepEl.textContent = message;
 		}
 
 		// Update progress bar
@@ -223,30 +110,28 @@ class ProgressModal extends Modal {
 			if (el.hasClass('completed')) completedSteps++;
 		});
 
-		const percentage = (completedSteps / totalSteps) * 100;
-		this.progressFill.style.width = `${percentage}%`;
+		const percentage = Math.round((completedSteps / totalSteps) * 100);
+		this.progressBar.style.width = `${percentage}%`;
+		this.statusText.textContent = `${percentage}%`;
 	}
 
 	setProgress(percentage: number) {
-		this.progressFill.style.width = `${percentage}%`;
+		this.progressBar.style.width = `${percentage}%`;
+		this.statusText.textContent = `${Math.round(percentage)}%`;
 	}
 
 	setStatusText(text: string) {
-		this.statusText.textContent = text;
+		this.currentStepEl.textContent = text;
 	}
 
 	showSuccess(message: string) {
-		this.statusText.textContent = message;
-		this.statusText.style.background = 'rgba(76, 175, 80, 0.2)';
-		this.statusText.style.color = '#4CAF50';
-		this.progressFill.style.width = '100%';
-		this.progressFill.style.background = 'linear-gradient(90deg, #4CAF50, #8BC34A)';
+		this.currentStepEl.textContent = message;
+		this.progressBar.style.width = '100%';
+		this.statusText.textContent = '100%';
 	}
 
 	showError(message: string) {
-		this.statusText.textContent = message;
-		this.statusText.style.background = 'rgba(244, 67, 54, 0.2)';
-		this.statusText.style.color = '#f44336';
+		this.currentStepEl.textContent = `❌ ${message}`;
 	}
 
 	onClose() {

@@ -54,3 +54,124 @@
 	color: var(--text-muted);
 	margin-top: 8px;
 }
+
+/* ==================== Progress Modal ==================== */
+.voice-briefing-progress-modal {
+  padding: 24px;
+  min-width: 450px;
+}
+
+.voice-briefing-progress-title {
+  text-align: center;
+  margin: 0 0 20px 0;
+  font-size: 1.4em;
+  color: var(--text-normal);
+}
+
+.voice-briefing-progress-container {
+  background: var(--background-modifier-border);
+  border-radius: 12px;
+  height: 32px;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 30px;
+}
+
+.voice-briefing-progress-bar {
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 12px;
+}
+
+.voice-briefing-progress-percentage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: bold;
+  font-size: 0.95em;
+  color: var(--text-normal);
+  z-index: 1;
+}
+
+.voice-briefing-steps-container {
+  margin-bottom: 30px;
+}
+
+.voice-briefing-step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 8px 0;
+  border-radius: 8px;
+  background: var(--background-secondary);
+  border-left: 4px solid var(--background-modifier-border);
+  transition: all 0.3s ease;
+}
+
+.voice-briefing-step-item.active {
+  background: var(--background-modifier-hover);
+  border-left-color: #2563eb;
+}
+
+.voice-briefing-step-item.completed {
+  opacity: 0.7;
+  border-left-color: #10b981;
+}
+
+.voice-briefing-step-icon {
+  font-size: 1.2em;
+  width: 28px;
+  text-align: center;
+}
+
+.voice-briefing-step-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.voice-briefing-step-status {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.voice-briefing-current-task {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9em;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+/* ==================== Animations ==================== */
+@keyframes voice-briefing-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.voice-briefing-step-item.active .voice-briefing-step-icon {
+  animation: voice-briefing-spin 1s linear infinite;
+}
+
+/* ==================== Dark Theme Support ==================== */
+.theme-dark .voice-briefing-progress-modal {
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+/* ==================== Mobile Responsive ==================== */
+@media (max-width: 600px) {
+  .voice-briefing-progress-modal {
+    min-width: unset;
+    width: 100%;
+    padding: 20px;
+  }
+}
