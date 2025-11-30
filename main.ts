@@ -335,15 +335,40 @@ export default class VoiceBriefingPlugin extends Plugin {
 
 				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
 
-				if (uploadResult.success && uploadResult.downloadUrl) {
-					// Use Google Drive audio player embed (iframe) for web playback
-					// This works better than <audio> tag which has CORS issues with Google Drive
+				if (uploadResult.success && uploadResult.fileId) {
+					// Google Drive audio embed - using the embed player URL format
+					// Format: https://drive.google.com/file/d/FILE_ID/preview for full player
 					const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
+					const driveViewUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/view`;
 
-					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n<iframe src="${driveEmbedUrl}" width="100%" height="80" allow="autoplay" frameborder="0" style="border-radius: 8px;"></iframe>\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n\n[📥 Download Audio](${uploadResult.downloadUrl}) | [📁 View in Google Drive](${uploadResult.publicUrl})\n`;
+					// Use iframe with proper dimensions for audio player
+					// Height 100 works well for Google Drive audio player
+					audioEmbed = `
+
+---
+
+## 🎧 Voice Briefing
+
+<iframe
+	src="${driveEmbedUrl}"
+	width="640"
+	height="100"
+	frameborder="0"
+	allowfullscreen="true"
+	allow="autoplay; encrypted-media">
+</iframe>
+
+> 📅 *Generated: ${new Date().toLocaleString()}*
+> ⏱️ *Duration: ~${scriptResult.estimatedDuration}s*
+
+**Links:** [🔗 Open in Google Drive](${driveViewUrl}) | [📥 Download](${uploadResult.downloadUrl || driveViewUrl})
+
+---
+`;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
-					console.log('Audio embed created:', audioEmbed);
+					console.log('Audio embed created with fileId:', uploadResult.fileId);
+					console.log('Embed URL:', driveEmbedUrl);
 				} else {
 					// Fallback to local file
 					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');

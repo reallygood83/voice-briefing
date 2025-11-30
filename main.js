@@ -4248,20 +4248,34 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
           }
         });
         const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, "audio/mpeg");
-        if (uploadResult.success && uploadResult.downloadUrl) {
+        if (uploadResult.success && uploadResult.fileId) {
           const driveEmbedUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/preview`;
+          const driveViewUrl = `https://drive.google.com/file/d/${uploadResult.fileId}/view`;
           audioEmbed = `
+
+---
 
 ## \u{1F3A7} Voice Briefing
 
-<iframe src="${driveEmbedUrl}" width="100%" height="80" allow="autoplay" frameborder="0" style="border-radius: 8px;"></iframe>
+<iframe
+	src="${driveEmbedUrl}"
+	width="640"
+	height="100"
+	frameborder="0"
+	allowfullscreen="true"
+	allow="autoplay; encrypted-media">
+</iframe>
 
-*Generated on ${new Date().toLocaleString()} \u2022 Duration: ~${scriptResult.estimatedDuration}s*
+> \u{1F4C5} *Generated: ${new Date().toLocaleString()}*
+> \u23F1\uFE0F *Duration: ~${scriptResult.estimatedDuration}s*
 
-[\u{1F4E5} Download Audio](${uploadResult.downloadUrl}) | [\u{1F4C1} View in Google Drive](${uploadResult.publicUrl})
+**Links:** [\u{1F517} Open in Google Drive](${driveViewUrl}) | [\u{1F4E5} Download](${uploadResult.downloadUrl || driveViewUrl})
+
+---
 `;
           progressModal.setStep("upload", "completed", "Uploaded to Google Drive");
-          console.log("Audio embed created:", audioEmbed);
+          console.log("Audio embed created with fileId:", uploadResult.fileId);
+          console.log("Embed URL:", driveEmbedUrl);
         } else {
           progressModal.setStep("upload", "error", "Cloud upload failed, using local file");
           audioEmbed = `
