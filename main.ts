@@ -22,6 +22,10 @@ interface VoiceBriefingSettings {
 	cloudSharingEnabled: boolean;
 	googleDriveConnected: boolean;
 	googleDriveToken: string;
+	googleDriveRefreshToken: string;
+	googleDriveTokenExpiresAt: number;
+	googleDriveClientId: string;
+	googleDriveClientSecret: string;
 	googleDriveFolderId: string;
 	linkFormat: 'html' | 'direct' | 'markdown';
 }
@@ -40,6 +44,10 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	cloudSharingEnabled: false,
 	googleDriveConnected: false,
 	googleDriveToken: '',
+	googleDriveRefreshToken: '',
+	googleDriveTokenExpiresAt: 0,
+	googleDriveClientId: '',
+	googleDriveClientSecret: '',
 	googleDriveFolderId: '',
 	linkFormat: 'html'
 }
@@ -156,7 +164,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
 				const driveClient = new GoogleDriveClient({
 					accessToken: this.settings.googleDriveToken,
-					folderId: this.settings.googleDriveFolderId || undefined
+					refreshToken: this.settings.googleDriveRefreshToken || undefined,
+					tokenExpiresAt: this.settings.googleDriveTokenExpiresAt || undefined,
+					clientId: this.settings.googleDriveClientId || undefined,
+					clientSecret: this.settings.googleDriveClientSecret || undefined,
+					folderId: this.settings.googleDriveFolderId || undefined,
+					onTokenRefresh: async (tokens) => {
+						// Save refreshed tokens
+						this.settings.googleDriveToken = tokens.accessToken;
+						this.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+						await this.saveSettings();
+					}
 				});
 
 				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
@@ -392,20 +410,112 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				}));
 
 		if (this.plugin.settings.cloudSharingEnabled) {
+			// Google Cloud Credentials Section
+			containerEl.createEl('h3', {text: '🔑 Google Cloud Credentials'});
+
+			const credentialsInfo = containerEl.createDiv('voice-briefing-info');
+			credentialsInfo.createEl('p', {
+				text: '📋 First, get your credentials from Google Cloud Console:',
+				cls: 'setting-item-description'
+			});
+			const steps = credentialsInfo.createEl('ol');
+			steps.createEl('li', {text: 'Go to console.cloud.google.com'});
+			steps.createEl('li', {text: 'Create a new project or select existing'});
+			steps.createEl('li', {text: 'Enable Google Drive API'});
+			steps.createEl('li', {text: 'Create OAuth 2.0 credentials (Desktop app)'});
+			steps.createEl('li', {text: 'Copy Client ID and Client Secret below'});
+			steps.createEl('li', {text: 'Add http://localhost:8585/callback to Authorized redirect URIs'});
+
+			new Setting(containerEl)
+				.setName('Client ID')
+				.setDesc('OAuth 2.0 Client ID from Google Cloud Console')
+				.addText(text => text
+					.setPlaceholder('xxxx.apps.googleusercontent.com')
+					.setValue(this.plugin.settings.googleDriveClientId)
+					.onChange(async (value) => {
+						this.plugin.settings.googleDriveClientId = value;
+						await this.plugin.saveSettings();
+					}));
+
+			new Setting(containerEl)
+				.setName('Client Secret')
+				.setDesc('OAuth 2.0 Client Secret from Google Cloud Console')
+				.addText(text => {
+					text.setPlaceholder('GOCSPX-...')
+						.setValue(this.plugin.settings.googleDriveClientSecret)
+						.onChange(async (value) => {
+							this.plugin.settings.googleDriveClientSecret = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
+
+			// Connection Section
+			containerEl.createEl('h3', {text: '🔗 Connection Status'});
+
+			const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
+
 			const connectionSetting = new Setting(containerEl)
 				.setName('Google Drive Connection')
 				.setDesc(this.plugin.settings.googleDriveConnected
-					? '✅ Connected'
-					: '🔴 Not connected');
+					? '✅ Connected (token auto-refreshes)'
+					: hasCredentials
+						? '🔴 Not connected - Click to connect'
+						: '⚠️ Enter Client ID and Secret above first');
 
 			if (!this.plugin.settings.googleDriveConnected) {
 				connectionSetting.addButton(button => button
 					.setButtonText('Connect with Google')
 					.setCta()
+					.setDisabled(!hasCredentials)
 					.onClick(async () => {
-						new Notice('📋 Please follow these steps to connect Google Drive:\n\n1. Go to Google Cloud Console\n2. Create OAuth 2.0 credentials\n3. Get your access token\n4. Paste it below', 10000);
+						if (!hasCredentials) {
+							new Notice('⚠️ Please enter Client ID and Client Secret first');
+							return;
+						}
+
+						try {
+							new Notice('🔄 Starting Google OAuth flow...');
+
+							const { GoogleOAuthFlow } = await import('./src/cloud/google-oauth-flow');
+							const oauthFlow = new GoogleOAuthFlow({
+								clientId: this.plugin.settings.googleDriveClientId,
+								clientSecret: this.plugin.settings.googleDriveClientSecret,
+								redirectPort: 8585
+							});
+
+							const tokens = await oauthFlow.startOAuthFlow();
+
+							// Save tokens
+							this.plugin.settings.googleDriveToken = tokens.accessToken;
+							this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
+							this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+							this.plugin.settings.googleDriveConnected = true;
+							await this.plugin.saveSettings();
+
+							new Notice('✅ Google Drive connected successfully!');
+							this.display(); // Refresh UI
+						} catch (error: any) {
+							console.error('OAuth error:', error);
+							new Notice(`❌ Connection failed: ${error.message}`);
+						}
 					}));
 			} else {
+				// Show token expiry info
+				const expiresAt = this.plugin.settings.googleDriveTokenExpiresAt;
+				if (expiresAt) {
+					const expiryDate = new Date(expiresAt);
+					const now = new Date();
+					const isExpired = now.getTime() >= expiresAt;
+
+					connectionSetting.setDesc(
+						isExpired
+							? '⚠️ Token expired - will auto-refresh on next use'
+							: `✅ Connected (expires: ${expiryDate.toLocaleString()})`
+					);
+				}
+
 				connectionSetting
 					.addButton(button => button
 						.setButtonText('Test Connection')
@@ -414,7 +524,17 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 							try {
 								const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
 								const client = new GoogleDriveClient({
-									accessToken: this.plugin.settings.googleDriveToken
+									accessToken: this.plugin.settings.googleDriveToken,
+									refreshToken: this.plugin.settings.googleDriveRefreshToken,
+									tokenExpiresAt: this.plugin.settings.googleDriveTokenExpiresAt,
+									clientId: this.plugin.settings.googleDriveClientId,
+									clientSecret: this.plugin.settings.googleDriveClientSecret,
+									onTokenRefresh: async (tokens) => {
+										this.plugin.settings.googleDriveToken = tokens.accessToken;
+										this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+										await this.plugin.saveSettings();
+										this.display();
+									}
 								});
 								const isConnected = await client.testConnection();
 								if (isConnected) {
@@ -423,7 +543,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 								} else {
 									new Notice('❌ Connection test failed');
 								}
-							} catch (error) {
+							} catch (error: any) {
 								new Notice(`❌ Connection test failed: ${error.message}`);
 							}
 						}))
@@ -433,26 +553,14 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 						.onClick(async () => {
 							this.plugin.settings.googleDriveConnected = false;
 							this.plugin.settings.googleDriveToken = '';
+							this.plugin.settings.googleDriveRefreshToken = '';
+							this.plugin.settings.googleDriveTokenExpiresAt = 0;
 							this.plugin.settings.googleDriveFolderId = '';
 							await this.plugin.saveSettings();
 							this.display();
 							new Notice('🔴 Disconnected from Google Drive');
 						}));
 			}
-
-			// Access Token Input
-			new Setting(containerEl)
-				.setName('Access Token')
-				.setDesc('Paste your Google Drive OAuth 2.0 access token')
-				.addText(text => text
-					.setPlaceholder('ya29.a0...')
-					.setValue(this.plugin.settings.googleDriveToken)
-					.onChange(async (value) => {
-						this.plugin.settings.googleDriveToken = value;
-						this.plugin.settings.googleDriveConnected = value.length > 0;
-						await this.plugin.saveSettings();
-					})
-					.inputEl.type = 'password');
 
 			// Link Format Setting
 			new Setting(containerEl)
@@ -486,6 +594,22 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				text: '💡 Tip: To find your folder ID, open the folder in Google Drive and copy the ID from the URL (the part after /folders/)',
 				cls: 'setting-item-description'
 			});
+
+			// Token info for debugging (collapsible)
+			if (this.plugin.settings.googleDriveConnected && this.plugin.settings.googleDriveRefreshToken) {
+				const debugDiv = containerEl.createDiv('voice-briefing-debug');
+				const details = debugDiv.createEl('details');
+				details.createEl('summary', {text: '🔧 Advanced: Token Info'});
+				const pre = details.createEl('pre');
+				pre.style.fontSize = '11px';
+				pre.style.background = '#f5f5f5';
+				pre.style.padding = '8px';
+				pre.style.borderRadius = '4px';
+				pre.style.overflow = 'auto';
+				pre.setText(`Access Token: ${this.plugin.settings.googleDriveToken.substring(0, 20)}...
+Refresh Token: ${this.plugin.settings.googleDriveRefreshToken ? '✅ Saved' : '❌ Missing'}
+Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plugin.settings.googleDriveTokenExpiresAt).toLocaleString() : 'Unknown'}`);
+			}
 		}
 	}
 

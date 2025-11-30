@@ -1,11 +1,14 @@
 import { Notice, requestUrl } from 'obsidian';
+import { GoogleOAuthFlow, OAuthTokens } from './google-oauth-flow';
 
 export interface GoogleDriveConfig {
 	clientId?: string;
 	clientSecret?: string;
 	accessToken: string;
 	refreshToken?: string;
+	tokenExpiresAt?: number;
 	folderId?: string;
+	onTokenRefresh?: (tokens: OAuthTokens) => Promise<void>;
 }
 
 export interface UploadResult {
@@ -19,11 +22,55 @@ export interface UploadResult {
 export class GoogleDriveClient {
 	private readonly API_URL = 'https://www.googleapis.com/drive/v3';
 	private readonly UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
+	private oauthFlow: GoogleOAuthFlow | null = null;
 
-	constructor(private config: GoogleDriveConfig) {}
+	constructor(private config: GoogleDriveConfig) {
+		// Initialize OAuth flow if we have client credentials
+		if (config.clientId && config.clientSecret) {
+			this.oauthFlow = new GoogleOAuthFlow({
+				clientId: config.clientId,
+				clientSecret: config.clientSecret,
+				redirectPort: 8585
+			});
+		}
+	}
+
+	/**
+	 * Ensure we have a valid access token, refreshing if necessary
+	 */
+	private async ensureValidToken(): Promise<string> {
+		// Check if token is expired or about to expire
+		if (this.config.tokenExpiresAt && this.config.refreshToken && this.oauthFlow) {
+			if (this.oauthFlow.isTokenExpired(this.config.tokenExpiresAt)) {
+				console.log('Access token expired or expiring soon, refreshing...');
+				try {
+					const newTokens = await this.oauthFlow.refreshAccessToken(this.config.refreshToken);
+
+					// Update local config
+					this.config.accessToken = newTokens.accessToken;
+					this.config.tokenExpiresAt = newTokens.expiresAt;
+
+					// Notify callback to save tokens
+					if (this.config.onTokenRefresh) {
+						await this.config.onTokenRefresh(newTokens);
+					}
+
+					new Notice('🔄 Google Drive token refreshed automatically');
+				} catch (error: any) {
+					console.error('Token refresh failed:', error);
+					throw new Error('Token refresh failed. Please reconnect Google Drive.');
+				}
+			}
+		}
+
+		return this.config.accessToken;
+	}
 
 	async uploadFile(filePath: string, fileName: string, mimeType: string = 'audio/mpeg'): Promise<UploadResult> {
 		try {
+			// Ensure we have a valid token before uploading
+			const accessToken = await this.ensureValidToken();
+
 			// Read file content
 			const fs = require('fs');
 			const fileContent = fs.readFileSync(filePath);
@@ -54,7 +101,7 @@ export class GoogleDriveClient {
 				url: `${this.UPLOAD_URL}/files?uploadType=multipart`,
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`,
+					'Authorization': `Bearer ${accessToken}`,
 					'Content-Type': `multipart/related; boundary=${boundary}`
 				},
 				body: multipartRequestBody
@@ -101,11 +148,12 @@ export class GoogleDriveClient {
 
 	private async makeFilePublic(fileId: string): Promise<void> {
 		try {
+			const accessToken = await this.ensureValidToken();
 			await requestUrl({
 				url: `${this.API_URL}/files/${fileId}/permissions`,
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`,
+					'Authorization': `Bearer ${accessToken}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
@@ -121,6 +169,7 @@ export class GoogleDriveClient {
 
 	async createFolder(folderName: string, parentFolderId?: string): Promise<string | null> {
 		try {
+			const accessToken = await this.ensureValidToken();
 			const metadata = {
 				name: folderName,
 				mimeType: 'application/vnd.google-apps.folder',
@@ -131,7 +180,7 @@ export class GoogleDriveClient {
 				url: `${this.API_URL}/files`,
 				method: 'POST',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`,
+					'Authorization': `Bearer ${accessToken}`,
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify(metadata)
@@ -153,12 +202,13 @@ export class GoogleDriveClient {
 
 	async findOrCreateFolder(folderName: string): Promise<string | null> {
 		try {
+			const accessToken = await this.ensureValidToken();
 			// Search for existing folder
 			const searchResponse = await requestUrl({
 				url: `${this.API_URL}/files?q=name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
 				method: 'GET',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`
+					'Authorization': `Bearer ${accessToken}`
 				}
 			});
 
@@ -180,11 +230,12 @@ export class GoogleDriveClient {
 
 	async testConnection(): Promise<boolean> {
 		try {
+			const accessToken = await this.ensureValidToken();
 			const response = await requestUrl({
 				url: `${this.API_URL}/about?fields=user`,
 				method: 'GET',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`
+					'Authorization': `Bearer ${accessToken}`
 				}
 			});
 
@@ -196,11 +247,12 @@ export class GoogleDriveClient {
 
 	async getUserInfo(): Promise<{email: string, name: string} | null> {
 		try {
+			const accessToken = await this.ensureValidToken();
 			const response = await requestUrl({
 				url: `${this.API_URL}/about?fields=user`,
 				method: 'GET',
 				headers: {
-					'Authorization': `Bearer ${this.config.accessToken}`
+					'Authorization': `Bearer ${accessToken}`
 				}
 			});
 
