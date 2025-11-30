@@ -4303,7 +4303,19 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
       console.log("Attempting to embed audio in note...");
       console.log("Current content length:", content.length);
       console.log("Audio embed to add:", audioEmbed);
-      const newContent = content + audioEmbed;
+      let newContent;
+      const frontmatterRegex = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+      const frontmatterMatch = content.match(frontmatterRegex);
+      if (frontmatterMatch) {
+        const frontmatterEnd = frontmatterMatch[0].length;
+        const beforeEmbed = content.substring(0, frontmatterEnd);
+        const afterEmbed = content.substring(frontmatterEnd);
+        newContent = beforeEmbed + audioEmbed + "\n" + afterEmbed;
+        console.log("Inserted audio embed after YAML frontmatter");
+      } else {
+        newContent = audioEmbed + "\n" + content;
+        console.log("No frontmatter found, inserted at beginning");
+      }
       console.log("New content length:", newContent.length);
       await this.app.vault.modify(activeFile, newContent);
       console.log("Note modified successfully");

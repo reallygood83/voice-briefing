@@ -380,14 +380,32 @@ export default class VoiceBriefingPlugin extends Plugin {
 				audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n`;
 			}
 
-			// Step 4: Embed audio in note
+			// Step 4: Embed audio in note (right after YAML frontmatter/properties)
 			progressModal.setStep('embed', 'active', 'Embedding audio in note...');
 
 			console.log('Attempting to embed audio in note...');
 			console.log('Current content length:', content.length);
 			console.log('Audio embed to add:', audioEmbed);
 
-			const newContent = content + audioEmbed;
+			// Find the position right after YAML frontmatter (properties)
+			// YAML frontmatter starts with --- and ends with ---
+			let newContent: string;
+			const frontmatterRegex = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+			const frontmatterMatch = content.match(frontmatterRegex);
+
+			if (frontmatterMatch) {
+				// Insert audio embed right after frontmatter
+				const frontmatterEnd = frontmatterMatch[0].length;
+				const beforeEmbed = content.substring(0, frontmatterEnd);
+				const afterEmbed = content.substring(frontmatterEnd);
+				newContent = beforeEmbed + audioEmbed + '\n' + afterEmbed;
+				console.log('Inserted audio embed after YAML frontmatter');
+			} else {
+				// No frontmatter found, insert at the beginning
+				newContent = audioEmbed + '\n' + content;
+				console.log('No frontmatter found, inserted at beginning');
+			}
+
 			console.log('New content length:', newContent.length);
 
 			await this.app.vault.modify(activeFile, newContent);
