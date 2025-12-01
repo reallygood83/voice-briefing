@@ -241,10 +241,6 @@ voice-note-obsidian/
 - [ ] Custom voice cloning (ElevenLabs)
 - [ ] Audio transcription for existing recordings
 
-## 📝 License
-
-MIT License - see LICENSE file for details
-
 ## 🙏 Acknowledgments
 
 - Built with [Obsidian API](https://github.com/obsidianmd/obsidian-api)
