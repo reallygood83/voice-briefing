@@ -1,5 +1,6 @@
-/* Voice Briefing Plugin Styles */
+/* Voice Briefing Plugin Styles - Neo-Brutalism Design */
 
+/* ==================== Base Styles ==================== */
 .voice-briefing-advanced {
 	margin-top: 20px;
 	padding: 15px;
@@ -55,206 +56,301 @@
 	margin-top: 8px;
 }
 
-/* ==================== Progress Modal ==================== */
+/* ==================== Neo-Brutalism Progress Modal ==================== */
 .voice-briefing-progress-modal {
-  padding: 32px;
-  min-width: 500px;
-  max-width: 600px;
-  background: var(--background-primary);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+	padding: 28px;
+	min-width: 480px;
+	max-width: 560px;
+	background: #FFFEF0;
+	border: 4px solid #1a1a1a;
+	border-radius: 16px;
+	box-shadow: 8px 8px 0px #1a1a1a;
+}
+
+.theme-dark .voice-briefing-progress-modal {
+	background: #2d2d2d;
+	border-color: #fafafa;
+	box-shadow: 8px 8px 0px #fafafa;
 }
 
 .voice-briefing-progress-title {
-  text-align: center;
-  margin: 0 0 28px 0;
-  font-size: 1.6em;
-  font-weight: 600;
-  color: var(--text-normal);
-  letter-spacing: -0.02em;
+	text-align: center;
+	margin: 0 0 24px 0;
+	font-size: 1.5em;
+	font-weight: 800;
+	color: #1a1a1a;
+	letter-spacing: -0.02em;
+	text-transform: uppercase;
 }
 
+.theme-dark .voice-briefing-progress-title {
+	color: #fafafa;
+}
+
+/* ==================== Neo-Brutalism Progress Bar ==================== */
 .voice-briefing-progress-container {
-  background: var(--background-secondary);
-  border-radius: 16px;
-  height: 40px;
-  position: relative;
-  overflow: hidden;
-  margin-bottom: 32px;
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.08);
+	background: #E8E8E8;
+	border: 3px solid #1a1a1a;
+	border-radius: 12px;
+	height: 48px;
+	position: relative;
+	overflow: hidden;
+	margin-bottom: 28px;
+	box-shadow: 4px 4px 0px #1a1a1a;
+}
+
+.theme-dark .voice-briefing-progress-container {
+	background: #404040;
+	border-color: #fafafa;
+	box-shadow: 4px 4px 0px #fafafa;
 }
 
 .voice-briefing-progress-bar {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  height: 100%;
-  width: 0%;
-  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(102, 126, 234, 0.3);
-  position: relative;
+	background: linear-gradient(90deg, #FFE156 0%, #FF6B6B 50%, #4ECDC4 100%);
+	height: 100%;
+	width: 0%;
+	transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+	border-radius: 8px;
+	position: relative;
 }
 
 .voice-briefing-progress-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.2) 50%,
-    transparent 100%);
-  animation: voice-briefing-shimmer 2s infinite;
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: repeating-linear-gradient(
+		45deg,
+		transparent,
+		transparent 10px,
+		rgba(255, 255, 255, 0.15) 10px,
+		rgba(255, 255, 255, 0.15) 20px
+	);
+	animation: neo-brutal-stripe 1s linear infinite;
+}
+
+@keyframes neo-brutal-stripe {
+	0% {
+		background-position: 0 0;
+	}
+	100% {
+		background-position: 40px 0;
+	}
 }
 
 .voice-briefing-progress-percentage {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-weight: 700;
-  font-size: 1em;
-  color: var(--text-normal);
-  z-index: 1;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-weight: 900;
+	font-size: 1.1em;
+	color: #1a1a1a;
+	z-index: 10;
+	text-shadow:
+		-1px -1px 0 #fff,
+		1px -1px 0 #fff,
+		-1px 1px 0 #fff,
+		1px 1px 0 #fff;
 }
 
+/* ==================== Neo-Brutalism Steps ==================== */
 .voice-briefing-steps-container {
-  margin-bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+	margin-bottom: 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
 }
 
 .voice-briefing-step-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border-radius: 12px;
-  background: var(--background-secondary);
-  border: 2px solid transparent;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 14px 18px;
+	border-radius: 12px;
+	background: #FFFFFF;
+	border: 3px solid #1a1a1a;
+	box-shadow: 4px 4px 0px #1a1a1a;
+	transition: all 0.2s ease;
+	position: relative;
 }
 
-.voice-briefing-step-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--background-modifier-border);
-  transition: all 0.3s ease;
+.theme-dark .voice-briefing-step-item {
+	background: #3a3a3a;
+	border-color: #fafafa;
+	box-shadow: 4px 4px 0px #fafafa;
 }
 
+.voice-briefing-step-item:hover {
+	transform: translate(-2px, -2px);
+	box-shadow: 6px 6px 0px #1a1a1a;
+}
+
+.theme-dark .voice-briefing-step-item:hover {
+	box-shadow: 6px 6px 0px #fafafa;
+}
+
+/* Active Step - Yellow Background */
 .voice-briefing-step-item.active {
-  background: var(--background-primary-alt);
-  border-color: rgba(102, 126, 234, 0.3);
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
-  transform: translateY(-2px);
+	background: #FFE156;
+	transform: translate(-2px, -2px);
+	box-shadow: 6px 6px 0px #1a1a1a;
 }
 
-.voice-briefing-step-item.active::before {
-  background: linear-gradient(180deg, #667eea, #764ba2);
-  width: 5px;
+.theme-dark .voice-briefing-step-item.active {
+	background: #FFE156;
+	color: #1a1a1a;
+	box-shadow: 6px 6px 0px #fafafa;
 }
 
+/* Completed Step - Mint Green Background */
 .voice-briefing-step-item.completed {
-  opacity: 0.8;
+	background: #4ECDC4;
 }
 
-.voice-briefing-step-item.completed::before {
-  background: #10b981;
+.theme-dark .voice-briefing-step-item.completed {
+	background: #4ECDC4;
+	color: #1a1a1a;
 }
 
+/* Error Step - Coral Background */
+.voice-briefing-step-item.error {
+	background: #FF6B6B;
+}
+
+/* Skipped Step - Gray */
+.voice-briefing-step-item.skipped {
+	background: #E0E0E0;
+	opacity: 0.7;
+}
+
+/* Step Icon */
 .voice-briefing-step-icon {
-  font-size: 1.5em;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background: var(--background-modifier-hover);
-  flex-shrink: 0;
+	font-size: 1.4em;
+	width: 40px;
+	height: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 10px;
+	background: #FFFFFF;
+	border: 2px solid #1a1a1a;
+	box-shadow: 2px 2px 0px #1a1a1a;
+	flex-shrink: 0;
+}
+
+.theme-dark .voice-briefing-step-icon {
+	background: #2d2d2d;
+	border-color: #fafafa;
+	box-shadow: 2px 2px 0px #fafafa;
 }
 
 .voice-briefing-step-item.active .voice-briefing-step-icon {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+	background: #FF6B6B;
+	animation: neo-brutal-bounce 0.6s ease infinite;
 }
 
+.voice-briefing-step-item.completed .voice-briefing-step-icon {
+	background: #1a1a1a;
+	color: #4ECDC4;
+}
+
+@keyframes neo-brutal-bounce {
+	0%, 100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(1.1);
+	}
+}
+
+/* Step Name */
 .voice-briefing-step-name {
-  flex: 1;
-  font-weight: 600;
-  font-size: 1.05em;
-  color: var(--text-normal);
-  letter-spacing: -0.01em;
+	flex: 1;
+	font-weight: 700;
+	font-size: 1em;
+	color: #1a1a1a;
+	letter-spacing: -0.01em;
 }
 
+.theme-dark .voice-briefing-step-name {
+	color: #fafafa;
+}
+
+.theme-dark .voice-briefing-step-item.active .voice-briefing-step-name,
+.theme-dark .voice-briefing-step-item.completed .voice-briefing-step-name {
+	color: #1a1a1a;
+}
+
+/* Step Status Badge */
 .voice-briefing-step-status {
-  font-size: 0.9em;
-  font-weight: 500;
-  color: var(--text-muted);
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: var(--background-modifier-hover);
+	font-size: 0.85em;
+	font-weight: 700;
+	color: #1a1a1a;
+	padding: 4px 10px;
+	border-radius: 8px;
+	background: #FFFFFF;
+	border: 2px solid #1a1a1a;
+	box-shadow: 2px 2px 0px #1a1a1a;
+}
+
+.theme-dark .voice-briefing-step-status {
+	background: #2d2d2d;
+	color: #fafafa;
+	border-color: #fafafa;
+	box-shadow: 2px 2px 0px #fafafa;
 }
 
 .voice-briefing-step-item.active .voice-briefing-step-status {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
+	background: #1a1a1a;
+	color: #FFE156;
 }
 
+.voice-briefing-step-item.completed .voice-briefing-step-status {
+	background: #1a1a1a;
+	color: #4ECDC4;
+}
+
+/* ==================== Current Task Display ==================== */
 .voice-briefing-current-task {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.95em;
-  margin-bottom: 24px;
-  font-weight: 500;
-  padding: 12px;
-  background: var(--background-secondary);
-  border-radius: 8px;
+	text-align: center;
+	color: #1a1a1a;
+	font-size: 0.95em;
+	font-weight: 600;
+	padding: 14px 18px;
+	background: #E8F4F8;
+	border: 3px solid #1a1a1a;
+	border-radius: 12px;
+	box-shadow: 4px 4px 0px #1a1a1a;
 }
 
-/* ==================== Animations ==================== */
-@keyframes voice-briefing-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes voice-briefing-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-.voice-briefing-step-item.active .voice-briefing-step-icon {
-  animation: voice-briefing-spin 1s linear infinite;
-}
-
-/* ==================== Dark Theme Support ==================== */
-.theme-dark .voice-briefing-progress-modal {
-  background: var(--background-primary);
-  color: var(--text-normal);
+.theme-dark .voice-briefing-current-task {
+	background: #3a4a4a;
+	color: #fafafa;
+	border-color: #fafafa;
+	box-shadow: 4px 4px 0px #fafafa;
 }
 
 /* ==================== Mobile Responsive ==================== */
 @media (max-width: 600px) {
-  .voice-briefing-progress-modal {
-    min-width: unset;
-    width: 100%;
-    padding: 20px;
-  }
+	.voice-briefing-progress-modal {
+		min-width: unset;
+		width: 100%;
+		padding: 20px;
+		border-width: 3px;
+		box-shadow: 5px 5px 0px #1a1a1a;
+	}
+
+	.voice-briefing-step-item {
+		padding: 12px 14px;
+		gap: 10px;
+	}
+
+	.voice-briefing-step-icon {
+		width: 32px;
+		height: 32px;
+		font-size: 1.2em;
+	}
 }
