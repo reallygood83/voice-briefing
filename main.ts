@@ -149,8 +149,22 @@ interface VoiceBriefingSettings {
 
 	// AI Provider Settings
 	aiProvider: 'gemini' | 'xai' | 'openai' | 'anthropic';
-	apiKey: string;
-	modelName: string;
+
+	// Provider-specific API Keys (saved separately)
+	geminiApiKey: string;
+	xaiApiKey: string;
+	openaiApiKey: string;
+	anthropicApiKey: string;
+
+	// Provider-specific Model Names (saved separately)
+	geminiModel: string;
+	xaiModel: string;
+	openaiModel: string;
+	anthropicModel: string;
+
+	// Legacy field (for migration)
+	apiKey?: string;
+	modelName?: string;
 
 	// TTS Settings
 	ttsEngine: 'edge' | 'elevenlabs';
@@ -175,8 +189,19 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	briefingStyle: 'feynman',
 	customStylePrompt: '',
 	aiProvider: 'gemini',
-	apiKey: '',
-	modelName: 'gemini-2.0-flash',
+
+	// Provider-specific API Keys
+	geminiApiKey: '',
+	xaiApiKey: '',
+	openaiApiKey: '',
+	anthropicApiKey: '',
+
+	// Provider-specific Models
+	geminiModel: 'gemini-2.0-flash',
+	xaiModel: 'grok-4-1-fast',
+	openaiModel: 'gpt-4o',
+	anthropicModel: 'claude-3-5-sonnet-20241022',
+
 	ttsEngine: 'edge',
 	edgeVoice: 'ko-KR-SunHiNeural',
 	elevenLabsApiKey: '',
@@ -269,8 +294,8 @@ export default class VoiceBriefingPlugin extends Plugin {
 				style: this.settings.briefingStyle,
 				customPrompt: this.settings.customStylePrompt,
 				provider: this.settings.aiProvider,
-				apiKey: this.settings.apiKey,
-				modelName: this.settings.modelName
+				apiKey: this.getCurrentApiKey(),
+				modelName: this.getCurrentModel()
 			});
 
 			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
@@ -443,6 +468,40 @@ export default class VoiceBriefingPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	// Get current provider's API key
+	getCurrentApiKey(): string {
+		const provider = this.settings.aiProvider;
+		switch (provider) {
+			case 'gemini':
+				return this.settings.geminiApiKey;
+			case 'xai':
+				return this.settings.xaiApiKey;
+			case 'openai':
+				return this.settings.openaiApiKey;
+			case 'anthropic':
+				return this.settings.anthropicApiKey;
+			default:
+				return '';
+		}
+	}
+
+	// Get current provider's model
+	getCurrentModel(): string {
+		const provider = this.settings.aiProvider;
+		switch (provider) {
+			case 'gemini':
+				return this.settings.geminiModel;
+			case 'xai':
+				return this.settings.xaiModel;
+			case 'openai':
+				return this.settings.openaiModel;
+			case 'anthropic':
+				return this.settings.anthropicModel;
+			default:
+				return 'gemini-2.0-flash';
+		}
+	}
 }
 
 class VoiceBriefingSettingTab extends PluginSettingTab {
@@ -532,31 +591,120 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				.onChange(async (value: any) => {
 					this.plugin.settings.aiProvider = value;
 					await this.plugin.saveSettings();
-					this.display(); // Refresh to update model suggestions
+					this.display(); // Refresh to show provider-specific settings
 				}));
 
-		new Setting(containerEl)
-			.setName('API Key')
-			.setDesc('Enter your AI provider API key')
-			.addText(text => text
-				.setPlaceholder('sk-...')
-				.setValue(this.plugin.settings.apiKey)
-				.onChange(async (value) => {
-					this.plugin.settings.apiKey = value;
-					await this.plugin.saveSettings();
-				})
-				.inputEl.type = 'password');
+		// Google Gemini Settings
+		if (this.plugin.settings.aiProvider === 'gemini') {
+			new Setting(containerEl)
+				.setName('Gemini API Key')
+				.setDesc('Enter your Google Gemini API key')
+				.addText(text => {
+					text.setPlaceholder('AI...')
+						.setValue(this.plugin.settings.geminiApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.geminiApiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
 
-		new Setting(containerEl)
-			.setName('Model Name')
-			.setDesc('AI model to use for script generation')
-			.addText(text => text
-				.setPlaceholder(this.getDefaultModel())
-				.setValue(this.plugin.settings.modelName)
-				.onChange(async (value) => {
-					this.plugin.settings.modelName = value;
-					await this.plugin.saveSettings();
-				}));
+			new Setting(containerEl)
+				.setName('Gemini Model')
+				.setDesc('Model to use for script generation')
+				.addText(text => text
+					.setPlaceholder('gemini-2.0-flash')
+					.setValue(this.plugin.settings.geminiModel)
+					.onChange(async (value) => {
+						this.plugin.settings.geminiModel = value || 'gemini-2.0-flash';
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// XAI (Grok) Settings
+		if (this.plugin.settings.aiProvider === 'xai') {
+			new Setting(containerEl)
+				.setName('XAI API Key')
+				.setDesc('Enter your XAI (Grok) API key')
+				.addText(text => {
+					text.setPlaceholder('xai-...')
+						.setValue(this.plugin.settings.xaiApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.xaiApiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
+
+			new Setting(containerEl)
+				.setName('XAI Model')
+				.setDesc('Model to use for script generation')
+				.addText(text => text
+					.setPlaceholder('grok-4-1-fast')
+					.setValue(this.plugin.settings.xaiModel)
+					.onChange(async (value) => {
+						this.plugin.settings.xaiModel = value || 'grok-4-1-fast';
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// OpenAI Settings
+		if (this.plugin.settings.aiProvider === 'openai') {
+			new Setting(containerEl)
+				.setName('OpenAI API Key')
+				.setDesc('Enter your OpenAI API key')
+				.addText(text => {
+					text.setPlaceholder('sk-...')
+						.setValue(this.plugin.settings.openaiApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.openaiApiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
+
+			new Setting(containerEl)
+				.setName('OpenAI Model')
+				.setDesc('Model to use for script generation')
+				.addText(text => text
+					.setPlaceholder('gpt-4o')
+					.setValue(this.plugin.settings.openaiModel)
+					.onChange(async (value) => {
+						this.plugin.settings.openaiModel = value || 'gpt-4o';
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// Anthropic (Claude) Settings
+		if (this.plugin.settings.aiProvider === 'anthropic') {
+			new Setting(containerEl)
+				.setName('Anthropic API Key')
+				.setDesc('Enter your Anthropic API key')
+				.addText(text => {
+					text.setPlaceholder('sk-ant-...')
+						.setValue(this.plugin.settings.anthropicApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.anthropicApiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
+
+			new Setting(containerEl)
+				.setName('Anthropic Model')
+				.setDesc('Model to use for script generation')
+				.addText(text => text
+					.setPlaceholder('claude-3-5-sonnet-20241022')
+					.setValue(this.plugin.settings.anthropicModel)
+					.onChange(async (value) => {
+						this.plugin.settings.anthropicModel = value || 'claude-3-5-sonnet-20241022';
+						await this.plugin.saveSettings();
+					}));
+		}
 
 		// ====================
 		// TTS SETTINGS
@@ -838,14 +986,42 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
 		}
 	}
 
+	// Get current provider's API key
+	getCurrentApiKey(): string {
+		const provider = this.plugin.settings.aiProvider;
+		switch (provider) {
+			case 'gemini':
+				return this.plugin.settings.geminiApiKey;
+			case 'xai':
+				return this.plugin.settings.xaiApiKey;
+			case 'openai':
+				return this.plugin.settings.openaiApiKey;
+			case 'anthropic':
+				return this.plugin.settings.anthropicApiKey;
+			default:
+				return '';
+		}
+	}
+
+	// Get current provider's model
+	getCurrentModel(): string {
+		const provider = this.plugin.settings.aiProvider;
+		switch (provider) {
+			case 'gemini':
+				return this.plugin.settings.geminiModel;
+			case 'xai':
+				return this.plugin.settings.xaiModel;
+			case 'openai':
+				return this.plugin.settings.openaiModel;
+			case 'anthropic':
+				return this.plugin.settings.anthropicModel;
+			default:
+				return 'gemini-2.0-flash';
+		}
+	}
+
 	getDefaultModel(): string {
-		const defaults: Record<string, string> = {
-			'gemini': 'gemini-2.0-flash',
-			'xai': 'grok-4-fast',
-			'openai': 'gpt-4o',
-			'anthropic': 'claude-3-5-sonnet'
-		};
-		return defaults[this.plugin.settings.aiProvider] || 'gemini-2.0-flash';
+		return this.getCurrentModel();
 	}
 
 	autoSelectVoice(language: string): void {

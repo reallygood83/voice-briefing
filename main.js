@@ -3143,8 +3143,13 @@ ${truncatedContent}`;
         }
       }
       async generateWithXAI(systemPrompt, userPrompt, apiKey, model) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
         try {
+          console.log("XAI API Request:", {
+            model,
+            endpoint: "https://api.x.ai/v1/chat/completions",
+            messageCount: 2
+          });
           const response = await axios_default.post(
             "https://api.x.ai/v1/chat/completions",
             {
@@ -3154,7 +3159,8 @@ ${truncatedContent}`;
                 { role: "user", content: userPrompt }
               ],
               temperature: 0.7,
-              max_tokens: 2048
+              max_tokens: 2048,
+              stream: false
             },
             {
               headers: {
@@ -3165,7 +3171,17 @@ ${truncatedContent}`;
           );
           return response.data.choices[0].message.content;
         } catch (error) {
-          throw new Error(`XAI API error: ${((_c = (_b = (_a = error.response) == null ? void 0 : _a.data) == null ? void 0 : _b.error) == null ? void 0 : _c.message) || error.message}`);
+          console.error("XAI API Error Details:", {
+            status: (_a = error.response) == null ? void 0 : _a.status,
+            statusText: (_b = error.response) == null ? void 0 : _b.statusText,
+            data: (_c = error.response) == null ? void 0 : _c.data,
+            message: error.message,
+            model
+          });
+          const errorMessage = ((_f = (_e = (_d = error.response) == null ? void 0 : _d.data) == null ? void 0 : _e.error) == null ? void 0 : _f.message) || ((_h = (_g = error.response) == null ? void 0 : _g.data) == null ? void 0 : _h.message) || error.message;
+          const errorDetails = ((_i = error.response) == null ? void 0 : _i.data) ? JSON.stringify(error.response.data) : "No details";
+          throw new Error(`XAI API error (${((_j = error.response) == null ? void 0 : _j.status) || "unknown"}): ${errorMessage}
+Details: ${errorDetails}`);
         }
       }
       async generateWithOpenAI(systemPrompt, userPrompt, apiKey, model) {
@@ -4136,8 +4152,16 @@ var DEFAULT_SETTINGS = {
   briefingStyle: "feynman",
   customStylePrompt: "",
   aiProvider: "gemini",
-  apiKey: "",
-  modelName: "gemini-2.0-flash",
+  // Provider-specific API Keys
+  geminiApiKey: "",
+  xaiApiKey: "",
+  openaiApiKey: "",
+  anthropicApiKey: "",
+  // Provider-specific Models
+  geminiModel: "gemini-2.0-flash",
+  xaiModel: "grok-4-1-fast",
+  openaiModel: "gpt-4o",
+  anthropicModel: "claude-3-5-sonnet-20241022",
   ttsEngine: "edge",
   edgeVoice: "ko-KR-SunHiNeural",
   elevenLabsApiKey: "",
@@ -4202,8 +4226,8 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
         style: this.settings.briefingStyle,
         customPrompt: this.settings.customStylePrompt,
         provider: this.settings.aiProvider,
-        apiKey: this.settings.apiKey,
-        modelName: this.settings.modelName
+        apiKey: this.getCurrentApiKey(),
+        modelName: this.getCurrentModel()
       });
       progressModal.setStep("script", "completed", `Script generated (~${scriptResult.estimatedDuration}s audio)`);
       progressModal.setStep("audio", "active", `Converting to audio with ${this.settings.ttsEngine === "edge" ? "Edge TTS" : "ElevenLabs"}...`);
@@ -4339,6 +4363,38 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
   }
+  // Get current provider's API key
+  getCurrentApiKey() {
+    const provider = this.settings.aiProvider;
+    switch (provider) {
+      case "gemini":
+        return this.settings.geminiApiKey;
+      case "xai":
+        return this.settings.xaiApiKey;
+      case "openai":
+        return this.settings.openaiApiKey;
+      case "anthropic":
+        return this.settings.anthropicApiKey;
+      default:
+        return "";
+    }
+  }
+  // Get current provider's model
+  getCurrentModel() {
+    const provider = this.settings.aiProvider;
+    switch (provider) {
+      case "gemini":
+        return this.settings.geminiModel;
+      case "xai":
+        return this.settings.xaiModel;
+      case "openai":
+        return this.settings.openaiModel;
+      case "anthropic":
+        return this.settings.anthropicModel;
+      default:
+        return "gemini-2.0-flash";
+    }
+  }
 };
 var VoiceBriefingSettingTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin) {
@@ -4372,14 +4428,62 @@ var VoiceBriefingSettingTab = class extends import_obsidian5.PluginSettingTab {
       await this.plugin.saveSettings();
       this.display();
     }));
-    new import_obsidian5.Setting(containerEl).setName("API Key").setDesc("Enter your AI provider API key").addText((text) => text.setPlaceholder("sk-...").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
-      this.plugin.settings.apiKey = value;
-      await this.plugin.saveSettings();
-    }).inputEl.type = "password");
-    new import_obsidian5.Setting(containerEl).setName("Model Name").setDesc("AI model to use for script generation").addText((text) => text.setPlaceholder(this.getDefaultModel()).setValue(this.plugin.settings.modelName).onChange(async (value) => {
-      this.plugin.settings.modelName = value;
-      await this.plugin.saveSettings();
-    }));
+    if (this.plugin.settings.aiProvider === "gemini") {
+      new import_obsidian5.Setting(containerEl).setName("Gemini API Key").setDesc("Enter your Google Gemini API key").addText((text) => {
+        text.setPlaceholder("AI...").setValue(this.plugin.settings.geminiApiKey).onChange(async (value) => {
+          this.plugin.settings.geminiApiKey = value;
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.type = "password";
+        return text;
+      });
+      new import_obsidian5.Setting(containerEl).setName("Gemini Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gemini-2.0-flash").setValue(this.plugin.settings.geminiModel).onChange(async (value) => {
+        this.plugin.settings.geminiModel = value || "gemini-2.0-flash";
+        await this.plugin.saveSettings();
+      }));
+    }
+    if (this.plugin.settings.aiProvider === "xai") {
+      new import_obsidian5.Setting(containerEl).setName("XAI API Key").setDesc("Enter your XAI (Grok) API key").addText((text) => {
+        text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
+          this.plugin.settings.xaiApiKey = value;
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.type = "password";
+        return text;
+      });
+      new import_obsidian5.Setting(containerEl).setName("XAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("grok-4-1-fast").setValue(this.plugin.settings.xaiModel).onChange(async (value) => {
+        this.plugin.settings.xaiModel = value || "grok-4-1-fast";
+        await this.plugin.saveSettings();
+      }));
+    }
+    if (this.plugin.settings.aiProvider === "openai") {
+      new import_obsidian5.Setting(containerEl).setName("OpenAI API Key").setDesc("Enter your OpenAI API key").addText((text) => {
+        text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
+          this.plugin.settings.openaiApiKey = value;
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.type = "password";
+        return text;
+      });
+      new import_obsidian5.Setting(containerEl).setName("OpenAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gpt-4o").setValue(this.plugin.settings.openaiModel).onChange(async (value) => {
+        this.plugin.settings.openaiModel = value || "gpt-4o";
+        await this.plugin.saveSettings();
+      }));
+    }
+    if (this.plugin.settings.aiProvider === "anthropic") {
+      new import_obsidian5.Setting(containerEl).setName("Anthropic API Key").setDesc("Enter your Anthropic API key").addText((text) => {
+        text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.anthropicApiKey).onChange(async (value) => {
+          this.plugin.settings.anthropicApiKey = value;
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.type = "password";
+        return text;
+      });
+      new import_obsidian5.Setting(containerEl).setName("Anthropic Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("claude-3-5-sonnet-20241022").setValue(this.plugin.settings.anthropicModel).onChange(async (value) => {
+        this.plugin.settings.anthropicModel = value || "claude-3-5-sonnet-20241022";
+        await this.plugin.saveSettings();
+      }));
+    }
     containerEl.createEl("h2", { text: "\u{1F50A} Text-to-Speech Settings" });
     new import_obsidian5.Setting(containerEl).setName("TTS Engine").setDesc("Choose between free Edge TTS or premium ElevenLabs").addDropdown((dropdown) => dropdown.addOption("edge", "Edge TTS (Free)").addOption("elevenlabs", "ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
       this.plugin.settings.ttsEngine = value;
@@ -4545,14 +4649,40 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
       }
     }
   }
+  // Get current provider's API key
+  getCurrentApiKey() {
+    const provider = this.plugin.settings.aiProvider;
+    switch (provider) {
+      case "gemini":
+        return this.plugin.settings.geminiApiKey;
+      case "xai":
+        return this.plugin.settings.xaiApiKey;
+      case "openai":
+        return this.plugin.settings.openaiApiKey;
+      case "anthropic":
+        return this.plugin.settings.anthropicApiKey;
+      default:
+        return "";
+    }
+  }
+  // Get current provider's model
+  getCurrentModel() {
+    const provider = this.plugin.settings.aiProvider;
+    switch (provider) {
+      case "gemini":
+        return this.plugin.settings.geminiModel;
+      case "xai":
+        return this.plugin.settings.xaiModel;
+      case "openai":
+        return this.plugin.settings.openaiModel;
+      case "anthropic":
+        return this.plugin.settings.anthropicModel;
+      default:
+        return "gemini-2.0-flash";
+    }
+  }
   getDefaultModel() {
-    const defaults2 = {
-      "gemini": "gemini-2.0-flash",
-      "xai": "grok-4-fast",
-      "openai": "gpt-4o",
-      "anthropic": "claude-3-5-sonnet"
-    };
-    return defaults2[this.plugin.settings.aiProvider] || "gemini-2.0-flash";
+    return this.getCurrentModel();
   }
   autoSelectVoice(language) {
     const voiceMap = {

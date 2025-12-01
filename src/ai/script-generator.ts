@@ -124,6 +124,12 @@ Write the script ${langInstruction}. Structure it like a news segment (1-2 minut
 
 	private async generateWithXAI(systemPrompt: string, userPrompt: string, apiKey: string, model: string): Promise<string> {
 		try {
+			console.log('XAI API Request:', {
+				model,
+				endpoint: 'https://api.x.ai/v1/chat/completions',
+				messageCount: 2
+			});
+
 			const response = await axios.post(
 				'https://api.x.ai/v1/chat/completions',
 				{
@@ -133,7 +139,8 @@ Write the script ${langInstruction}. Structure it like a news segment (1-2 minut
 						{ role: 'user', content: userPrompt }
 					],
 					temperature: 0.7,
-					max_tokens: 2048
+					max_tokens: 2048,
+					stream: false
 				},
 				{
 					headers: {
@@ -145,7 +152,21 @@ Write the script ${langInstruction}. Structure it like a news segment (1-2 minut
 
 			return response.data.choices[0].message.content;
 		} catch (error: any) {
-			throw new Error(`XAI API error: ${error.response?.data?.error?.message || error.message}`);
+			// Enhanced error logging
+			console.error('XAI API Error Details:', {
+				status: error.response?.status,
+				statusText: error.response?.statusText,
+				data: error.response?.data,
+				message: error.message,
+				model: model
+			});
+
+			const errorMessage = error.response?.data?.error?.message
+				|| error.response?.data?.message
+				|| error.message;
+			const errorDetails = error.response?.data ? JSON.stringify(error.response.data) : 'No details';
+
+			throw new Error(`XAI API error (${error.response?.status || 'unknown'}): ${errorMessage}\nDetails: ${errorDetails}`);
 		}
 	}
 
