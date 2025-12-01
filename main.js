@@ -4198,8 +4198,9 @@ var VoiceBriefingPlugin = class extends import_obsidian5.Plugin {
       new import_obsidian5.Notice("No active note found");
       return;
     }
-    if (!this.settings.apiKey) {
-      new import_obsidian5.Notice("Please set your AI API key in settings");
+    const currentApiKey = this.getCurrentApiKey();
+    if (!currentApiKey) {
+      new import_obsidian5.Notice(`Please set your ${this.settings.aiProvider.toUpperCase()} API key in settings`);
       return;
     }
     if (this.settings.ttsEngine === "elevenlabs") {

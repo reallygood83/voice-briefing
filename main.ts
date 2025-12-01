@@ -251,9 +251,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 			return;
 		}
 
-		// Validation
-		if (!this.settings.apiKey) {
-			new Notice('Please set your AI API key in settings');
+		// Validation - Check current provider's API key
+		const currentApiKey = this.getCurrentApiKey();
+		if (!currentApiKey) {
+			new Notice(`Please set your ${this.settings.aiProvider.toUpperCase()} API key in settings`);
 			return;
 		}
 
