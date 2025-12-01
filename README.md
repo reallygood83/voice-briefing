@@ -2,6 +2,29 @@
 
 Convert your Obsidian notes into 1-2 minute audio briefings using AI and Text-to-Speech, with cloud sharing support via Google Drive.
 
+---
+
+## ⚖️ LICENSE AND COPYRIGHT
+
+**Copyright © 2025 reallygood83. All Rights Reserved.**
+
+**IMPORTANT:** This software is for **personal use only**.
+
+### Commercial Use Restrictions
+- ❌ **Commercial use is PROHIBITED** without explicit written permission from the author
+- ❌ You may NOT use this software in any business or commercial environment
+- ❌ You may NOT sell, distribute, or sublicense this software
+- ❌ You may NOT provide paid services using this software
+
+### Permission Required
+- ✅ **Personal, non-commercial use** is permitted
+- 📧 **All other uses** require written permission from the author
+- 🔐 Contact: [GitHub](https://github.com/reallygood83/voice-note-obsidian)
+
+For full license terms, see the [LICENSE](LICENSE) file.
+
+---
+
 ## ✨ Features
 
 ### 🤖 Multi-Provider AI Script Generation
