@@ -1,6 +1,6 @@
 {
   "name": "obsidian-voice-briefing",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Obsidian plugin for creating voice briefings from notes",
   "main": "main.js",
   "scripts": {
