@@ -424,11 +424,19 @@
 .theme-dark .voice-briefing-select {
 	background: #3a3a3a;
 	color: #fafafa !important;
+	-webkit-text-fill-color: #fafafa !important;
 	border-color: #fafafa;
 	box-shadow: 4px 4px 0px #fafafa;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23fafafa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: right 16px center;
+	opacity: 1 !important;
+}
+
+/* Fix for selected value visibility in dark theme */
+.theme-dark .voice-briefing-select:not(:focus):valid {
+	color: #fafafa !important;
+	-webkit-text-fill-color: #fafafa !important;
 }
 
 /* Select Option Styles for Dark Theme */
@@ -442,6 +450,8 @@
 .theme-dark .voice-briefing-select option {
 	background: #3a3a3a;
 	color: #fafafa !important;
+	-webkit-text-fill-color: #fafafa !important;
+	opacity: 1 !important;
 }
 
 .voice-briefing-select optgroup {
@@ -454,6 +464,8 @@
 .theme-dark .voice-briefing-select optgroup {
 	background: #2a2a2a;
 	color: #fafafa !important;
+	-webkit-text-fill-color: #fafafa !important;
+	opacity: 1 !important;
 }
 
 .voice-briefing-select:hover {
