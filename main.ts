@@ -153,6 +153,251 @@ class ProgressModal extends Modal {
 	}
 }
 
+// Import Gemini TTS voices and languages
+import { GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './src/tts/gemini-tts-handler';
+
+// Quick Options Modal - Neo-Brutalism Style
+class QuickOptionsModal extends Modal {
+	private settings: VoiceBriefingSettings;
+	private onSubmit: (options: QuickOptions) => void;
+	private currentOptions: QuickOptions;
+
+	constructor(app: App, settings: VoiceBriefingSettings, onSubmit: (options: QuickOptions) => void) {
+		super(app);
+		this.settings = settings;
+		this.onSubmit = onSubmit;
+		this.currentOptions = {
+			ttsEngine: settings.ttsEngine,
+			geminiVoice: settings.geminiTtsVoice,
+			geminiLanguage: settings.geminiTtsLanguage,
+			edgeVoice: settings.edgeVoice,
+			briefingStyle: settings.briefingStyle,
+			customPrompt: ''
+		};
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('voice-briefing-quick-options-modal');
+
+		// Title
+		const titleEl = contentEl.createEl('h2', {
+			text: '⚡ QUICK OPTIONS',
+			cls: 'voice-briefing-quick-options-title'
+		});
+
+		// Form container
+		const formEl = contentEl.createDiv({ cls: 'voice-briefing-quick-options-form' });
+
+		// TTS Engine Selection
+		this.createSection(formEl, '🔊 TTS Engine', (container) => {
+			const select = container.createEl('select', { cls: 'voice-briefing-select' });
+
+			const engines = [
+				{ value: 'gemini', label: '🤖 Gemini TTS (Recommended)' },
+				{ value: 'edge', label: '🔷 Edge TTS (Free)' },
+				{ value: 'elevenlabs', label: '🟣 ElevenLabs (Premium)' }
+			];
+
+			engines.forEach(engine => {
+				const option = select.createEl('option', { text: engine.label, value: engine.value });
+				if (engine.value === this.currentOptions.ttsEngine) {
+					option.selected = true;
+				}
+			});
+
+			select.addEventListener('change', () => {
+				this.currentOptions.ttsEngine = select.value as 'edge' | 'elevenlabs' | 'gemini';
+				this.refreshForm();
+			});
+		});
+
+		// Gemini Voice Selection (only show if Gemini is selected)
+		if (this.currentOptions.ttsEngine === 'gemini') {
+			this.createSection(formEl, '🎭 Voice', (container) => {
+				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+
+				// Group voices by gender
+				const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
+				const maleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'M');
+
+				// Female voices group
+				const femaleGroup = select.createEl('optgroup', { attr: { label: '👩 Female Voices' } });
+				femaleVoices.forEach(voice => {
+					const option = femaleGroup.createEl('option', {
+						text: `${voice.name} - ${voice.style}`,
+						value: voice.name
+					});
+					if (voice.name === this.currentOptions.geminiVoice) {
+						option.selected = true;
+					}
+				});
+
+				// Male voices group
+				const maleGroup = select.createEl('optgroup', { attr: { label: '👨 Male Voices' } });
+				maleVoices.forEach(voice => {
+					const option = maleGroup.createEl('option', {
+						text: `${voice.name} - ${voice.style}`,
+						value: voice.name
+					});
+					if (voice.name === this.currentOptions.geminiVoice) {
+						option.selected = true;
+					}
+				});
+
+				select.addEventListener('change', () => {
+					this.currentOptions.geminiVoice = select.value;
+				});
+			});
+
+			this.createSection(formEl, '🌐 Language', (container) => {
+				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+
+				GEMINI_TTS_LANGUAGES.forEach(lang => {
+					const option = select.createEl('option', {
+						text: lang.label,
+						value: lang.code
+					});
+					if (lang.code === this.currentOptions.geminiLanguage) {
+						option.selected = true;
+					}
+				});
+
+				select.addEventListener('change', () => {
+					this.currentOptions.geminiLanguage = select.value;
+				});
+			});
+		}
+
+		// Edge Voice Selection (only show if Edge is selected)
+		if (this.currentOptions.ttsEngine === 'edge') {
+			this.createSection(formEl, '🎭 Edge Voice', (container) => {
+				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+
+				const edgeVoices: Record<string, string[]> = {
+					'Korean': ['ko-KR-SunHiNeural', 'ko-KR-InJoonNeural'],
+					'English (US)': ['en-US-AriaNeural', 'en-US-GuyNeural', 'en-US-JennyNeural'],
+					'Japanese': ['ja-JP-NanamiNeural', 'ja-JP-KeitaNeural'],
+					'Chinese': ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural'],
+					'Spanish': ['es-ES-ElviraNeural', 'es-ES-AlvaroNeural'],
+					'French': ['fr-FR-DeniseNeural', 'fr-FR-HenriNeural'],
+					'German': ['de-DE-KatjaNeural', 'de-DE-ConradNeural']
+				};
+
+				Object.entries(edgeVoices).forEach(([lang, voices]) => {
+					const group = select.createEl('optgroup', { attr: { label: lang } });
+					voices.forEach(voice => {
+						const option = group.createEl('option', { text: voice, value: voice });
+						if (voice === this.currentOptions.edgeVoice) {
+							option.selected = true;
+						}
+					});
+				});
+
+				select.addEventListener('change', () => {
+					this.currentOptions.edgeVoice = select.value;
+				});
+			});
+		}
+
+		// ElevenLabs note (if selected)
+		if (this.currentOptions.ttsEngine === 'elevenlabs') {
+			const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
+			noteEl.createEl('p', {
+				text: '💡 ElevenLabs uses settings from Plugin Settings page.',
+				cls: 'voice-briefing-note-text'
+			});
+		}
+
+		// Briefing Style Selection
+		this.createSection(formEl, '📝 Briefing Style', (container) => {
+			const select = container.createEl('select', { cls: 'voice-briefing-select' });
+
+			const styles = [
+				{ value: 'metaphor', label: '🌟 Metaphorical (Easy analogies)' },
+				{ value: 'feynman', label: '🎓 Feynman Technique (Teaching style)' },
+				{ value: 'anchor', label: '📰 News Anchor (Professional)' },
+				{ value: 'custom', label: '✏️ Custom (Use prompt below)' }
+			];
+
+			styles.forEach(style => {
+				const option = select.createEl('option', { text: style.label, value: style.value });
+				if (style.value === this.currentOptions.briefingStyle) {
+					option.selected = true;
+				}
+			});
+
+			select.addEventListener('change', () => {
+				this.currentOptions.briefingStyle = select.value as 'metaphor' | 'feynman' | 'anchor' | 'custom';
+				this.refreshForm();
+			});
+		});
+
+		// Custom Prompt (always show, but indicate if it will be used)
+		this.createSection(formEl, '✍️ Custom Prompt (optional)', (container) => {
+			const textarea = container.createEl('textarea', {
+				cls: 'voice-briefing-textarea',
+				attr: {
+					placeholder: this.settings.customStylePrompt
+						? `Default: "${this.settings.customStylePrompt.substring(0, 50)}..."`
+						: 'Enter custom instructions for the briefing style...',
+					rows: '3'
+				}
+			});
+			textarea.value = this.currentOptions.customPrompt;
+
+			textarea.addEventListener('input', () => {
+				this.currentOptions.customPrompt = textarea.value;
+			});
+
+			const hintEl = container.createDiv({ cls: 'voice-briefing-hint' });
+			hintEl.createEl('span', {
+				text: '💡 Leave empty to use default prompt from settings',
+				cls: 'voice-briefing-hint-text'
+			});
+		});
+
+		// Generate Button
+		const buttonContainer = contentEl.createDiv({ cls: 'voice-briefing-button-container' });
+		const generateBtn = buttonContainer.createEl('button', {
+			text: '🎙️ GENERATE BRIEFING',
+			cls: 'voice-briefing-generate-btn'
+		});
+
+		generateBtn.addEventListener('click', () => {
+			this.close();
+			this.onSubmit(this.currentOptions);
+		});
+
+		// Cancel Button
+		const cancelBtn = buttonContainer.createEl('button', {
+			text: 'Cancel',
+			cls: 'voice-briefing-cancel-btn'
+		});
+
+		cancelBtn.addEventListener('click', () => {
+			this.close();
+		});
+	}
+
+	private createSection(parent: HTMLElement, label: string, contentFn: (container: HTMLElement) => void) {
+		const section = parent.createDiv({ cls: 'voice-briefing-section' });
+		section.createEl('label', { text: label, cls: 'voice-briefing-label' });
+		const container = section.createDiv({ cls: 'voice-briefing-control' });
+		contentFn(container);
+	}
+
+	private refreshForm() {
+		this.onOpen();
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+}
+
 // Plugin settings interface
 interface VoiceBriefingSettings {
 	// General Settings
@@ -180,10 +425,14 @@ interface VoiceBriefingSettings {
 	modelName?: string;
 
 	// TTS Settings
-	ttsEngine: 'edge' | 'elevenlabs';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini';
 	edgeVoice: string;
 	elevenLabsApiKey: string;
 	elevenLabsVoiceId: string;
+
+	// Gemini TTS Settings
+	geminiTtsVoice: string;
+	geminiTtsLanguage: string;
 
 	// Cloud Sharing Settings
 	cloudSharingEnabled: boolean;
@@ -195,6 +444,16 @@ interface VoiceBriefingSettings {
 	googleDriveClientSecret: string;
 	googleDriveFolderId: string;
 	linkFormat: 'html' | 'direct' | 'markdown';
+}
+
+// Quick Options interface for modal
+interface QuickOptions {
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini';
+	geminiVoice: string;
+	geminiLanguage: string;
+	edgeVoice: string;
+	briefingStyle: 'metaphor' | 'feynman' | 'anchor' | 'custom';
+	customPrompt: string;
 }
 
 const DEFAULT_SETTINGS: VoiceBriefingSettings = {
@@ -215,10 +474,15 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	openaiModel: 'gpt-4o',
 	anthropicModel: 'claude-3-5-sonnet-20241022',
 
-	ttsEngine: 'edge',
+	ttsEngine: 'gemini',
 	edgeVoice: 'ko-KR-SunHiNeural',
 	elevenLabsApiKey: '',
 	elevenLabsVoiceId: '',
+
+	// Gemini TTS defaults
+	geminiTtsVoice: 'Kore',
+	geminiTtsLanguage: 'auto',
+
 	cloudSharingEnabled: false,
 	googleDriveConnected: false,
 	googleDriveToken: '',
@@ -271,14 +535,29 @@ export default class VoiceBriefingPlugin extends Plugin {
 			return;
 		}
 
-		// Additional validation for TTS
-		if (this.settings.ttsEngine === 'elevenlabs') {
+		// Show Quick Options Modal first
+		const quickOptionsModal = new QuickOptionsModal(this.app, this.settings, async (options: QuickOptions) => {
+			await this.executeVoiceBriefing(activeFile, options);
+		});
+		quickOptionsModal.open();
+	}
+
+	private async executeVoiceBriefing(activeFile: TFile, options: QuickOptions) {
+		// Additional validation for TTS based on selected engine
+		if (options.ttsEngine === 'elevenlabs') {
 			if (!this.settings.elevenLabsApiKey) {
 				new Notice('Please set your ElevenLabs API key in settings');
 				return;
 			}
 			if (!this.settings.elevenLabsVoiceId) {
 				new Notice('Please set your ElevenLabs voice ID in settings');
+				return;
+			}
+		}
+
+		if (options.ttsEngine === 'gemini') {
+			if (!this.settings.geminiApiKey) {
+				new Notice('Please set your Gemini API key in settings (same as AI Provider)');
 				return;
 			}
 		}
@@ -302,11 +581,14 @@ export default class VoiceBriefingPlugin extends Plugin {
 			const { ScriptGenerator } = await import('./src/ai/script-generator');
 			const scriptGenerator = new ScriptGenerator();
 
+			// Determine custom prompt: use Quick Options if provided, otherwise fallback to settings
+			const effectiveCustomPrompt = options.customPrompt.trim() || this.settings.customStylePrompt;
+
 			const scriptResult = await scriptGenerator.generate({
 				content: content,
 				language: this.settings.language,
-				style: this.settings.briefingStyle,
-				customPrompt: this.settings.customStylePrompt,
+				style: options.briefingStyle,
+				customPrompt: effectiveCustomPrompt,
 				provider: this.settings.aiProvider,
 				apiKey: this.getCurrentApiKey(),
 				modelName: this.getCurrentModel()
@@ -315,13 +597,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
 
 			// Step 2: Convert script to audio with TTS
-			progressModal.setStep('audio', 'active', `Converting to audio with ${this.settings.ttsEngine === 'edge' ? 'Edge TTS' : 'ElevenLabs'}...`);
+			const ttsEngineLabel = options.ttsEngine === 'edge' ? 'Edge TTS' :
+				options.ttsEngine === 'gemini' ? 'Gemini TTS' : 'ElevenLabs';
+			progressModal.setStep('audio', 'active', `Converting to audio with ${ttsEngineLabel}...`);
 
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
 			const ttsGenerator = new TTSGenerator();
 
 			// Prepare audio file path with ABSOLUTE path
-			const audioFileName = `${activeFile.basename}-briefing.mp3`;
+			// Note: Gemini TTS outputs .wav, Edge/ElevenLabs output .mp3
+			const audioExtension = options.ttsEngine === 'gemini' ? 'wav' : 'mp3';
+			const audioFileName = `${activeFile.basename}-briefing.${audioExtension}`;
 			const fs = require('fs');
 			const path = require('path');
 
@@ -336,12 +622,16 @@ export default class VoiceBriefingPlugin extends Plugin {
 			}
 
 			const ttsResult = await ttsGenerator.generate({
-				engine: this.settings.ttsEngine,
+				engine: options.ttsEngine,
 				text: scriptResult.script,
 				outputPath: audioPath,
-				edgeVoice: this.settings.edgeVoice,
+				edgeVoice: options.edgeVoice,
 				elevenLabsApiKey: this.settings.elevenLabsApiKey,
-				elevenLabsVoiceId: this.settings.elevenLabsVoiceId
+				elevenLabsVoiceId: this.settings.elevenLabsVoiceId,
+				// Gemini TTS options
+				geminiApiKey: this.settings.geminiApiKey,
+				geminiVoice: options.geminiVoice,
+				geminiLanguage: options.geminiLanguage
 			});
 
 			if (!ttsResult.success) {
@@ -726,11 +1016,12 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', {text: '🔊 Text-to-Speech Settings'});
 
 		new Setting(containerEl)
-			.setName('TTS Engine')
-			.setDesc('Choose between free Edge TTS or premium ElevenLabs')
+			.setName('Default TTS Engine')
+			.setDesc('Choose the default TTS engine (can be changed per-generation in Quick Options)')
 			.addDropdown(dropdown => dropdown
-				.addOption('edge', 'Edge TTS (Free)')
-				.addOption('elevenlabs', 'ElevenLabs (Premium)')
+				.addOption('gemini', '🤖 Gemini TTS (Recommended)')
+				.addOption('edge', '🔷 Edge TTS (Free)')
+				.addOption('elevenlabs', '🟣 ElevenLabs (Premium)')
 				.setValue(this.plugin.settings.ttsEngine)
 				.onChange(async (value: any) => {
 					this.plugin.settings.ttsEngine = value;
@@ -738,9 +1029,73 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					this.display(); // Refresh to show relevant settings
 				}));
 
+		// Gemini TTS Settings
+		if (this.plugin.settings.ttsEngine === 'gemini') {
+			const geminiInfo = containerEl.createDiv('voice-briefing-info');
+			geminiInfo.createEl('p', {
+				text: '💡 Gemini TTS uses the same API key as Gemini AI Provider. 30 voice options available with auto language detection.',
+				cls: 'setting-item-description'
+			});
+
+			new Setting(containerEl)
+				.setName('Default Gemini Voice')
+				.setDesc('Select default voice (grouped by gender)')
+				.addDropdown(dropdown => {
+					// Get voices from Gemini TTS handler
+					const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
+					const maleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'M');
+
+					// Add female voices group
+					const femaleGroup = dropdown.selectEl.createEl('optgroup', { attr: { label: '👩 Female Voices' } });
+					femaleVoices.forEach(voice => {
+						const option = femaleGroup.createEl('option', {
+							text: `${voice.name} - ${voice.style}`,
+							value: voice.name
+						});
+						if (voice.name === this.plugin.settings.geminiTtsVoice) {
+							option.selected = true;
+						}
+					});
+
+					// Add male voices group
+					const maleGroup = dropdown.selectEl.createEl('optgroup', { attr: { label: '👨 Male Voices' } });
+					maleVoices.forEach(voice => {
+						const option = maleGroup.createEl('option', {
+							text: `${voice.name} - ${voice.style}`,
+							value: voice.name
+						});
+						if (voice.name === this.plugin.settings.geminiTtsVoice) {
+							option.selected = true;
+						}
+					});
+
+					return dropdown
+						.onChange(async (value) => {
+							this.plugin.settings.geminiTtsVoice = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
+			new Setting(containerEl)
+				.setName('Default Gemini Language')
+				.setDesc('Select output language (Auto Detect recommended)')
+				.addDropdown(dropdown => {
+					GEMINI_TTS_LANGUAGES.forEach(lang => {
+						dropdown.addOption(lang.code, lang.label);
+					});
+					return dropdown
+						.setValue(this.plugin.settings.geminiTtsLanguage)
+						.onChange(async (value) => {
+							this.plugin.settings.geminiTtsLanguage = value;
+							await this.plugin.saveSettings();
+						});
+				});
+		}
+
+		// Edge TTS Settings
 		if (this.plugin.settings.ttsEngine === 'edge') {
 			new Setting(containerEl)
-				.setName('Edge Voice')
+				.setName('Default Edge Voice')
 				.setDesc('Select Edge TTS voice')
 				.addDropdown(dropdown => {
 					this.addEdgeVoiceOptions(dropdown);
@@ -751,7 +1106,10 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						});
 				});
-		} else {
+		}
+
+		// ElevenLabs Settings
+		if (this.plugin.settings.ttsEngine === 'elevenlabs') {
 			new Setting(containerEl)
 				.setName('ElevenLabs API Key')
 				.setDesc('Enter your ElevenLabs API key')

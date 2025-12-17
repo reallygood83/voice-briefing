@@ -1,9 +1,10 @@
 import { Notice } from 'obsidian';
 import { EdgeTTSHandler } from './edge-tts-handler';
 import { ElevenLabsHandler } from './elevenlabs-handler';
+import { GeminiTTSHandler, GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './gemini-tts-handler';
 
 export interface TTSGenerationOptions {
-	engine: 'edge' | 'elevenlabs';
+	engine: 'edge' | 'elevenlabs' | 'gemini';
 	text: string;
 	outputPath: string;
 
@@ -14,6 +15,11 @@ export interface TTSGenerationOptions {
 	elevenLabsApiKey?: string;
 	elevenLabsVoiceId?: string;
 	elevenLabsModelId?: string;
+
+	// Gemini TTS options
+	geminiApiKey?: string;
+	geminiVoice?: string;
+	geminiLanguage?: string;
 }
 
 export interface TTSGenerationResult {
@@ -26,16 +32,20 @@ export interface TTSGenerationResult {
 export class TTSGenerator {
 	private edgeHandler: EdgeTTSHandler;
 	private elevenLabsHandler: ElevenLabsHandler;
+	private geminiHandler: GeminiTTSHandler;
 
 	constructor() {
 		this.edgeHandler = new EdgeTTSHandler();
 		this.elevenLabsHandler = new ElevenLabsHandler();
+		this.geminiHandler = new GeminiTTSHandler();
 	}
 
 	async generate(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
 		try {
 			if (options.engine === 'edge') {
 				return await this.generateWithEdgeTTS(options);
+			} else if (options.engine === 'gemini') {
+				return await this.generateWithGeminiTTS(options);
 			} else {
 				return await this.generateWithElevenLabs(options);
 			}
@@ -85,6 +95,31 @@ export class TTSGenerator {
 		};
 	}
 
+	private async generateWithGeminiTTS(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
+		if (!options.geminiApiKey) {
+			throw new Error('Gemini API key is required for Gemini TTS');
+		}
+
+		// Gemini TTS outputs WAV, so we adjust the output path
+		let outputPath = options.outputPath;
+		if (outputPath.endsWith('.mp3')) {
+			outputPath = outputPath.replace('.mp3', '.wav');
+		}
+
+		await this.geminiHandler.generate({
+			apiKey: options.geminiApiKey,
+			text: options.text,
+			outputPath: outputPath,
+			voiceName: options.geminiVoice || 'Kore',
+			languageCode: options.geminiLanguage
+		});
+
+		return {
+			success: true,
+			audioPath: outputPath
+		};
+	}
+
 	async listEdgeVoices(): Promise<string[]> {
 		return await this.edgeHandler.listVoices();
 	}
@@ -95,5 +130,13 @@ export class TTSGenerator {
 
 	async getElevenLabsUsage(apiKey: string): Promise<{character_count: number, character_limit: number}> {
 		return await this.elevenLabsHandler.getUsage(apiKey);
+	}
+
+	getGeminiVoices(): Array<{ name: string; style: string; gender: string }> {
+		return this.geminiHandler.getVoices();
+	}
+
+	getGeminiLanguages(): Array<{ code: string; label: string }> {
+		return this.geminiHandler.getLanguages();
 	}
 }
