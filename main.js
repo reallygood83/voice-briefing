@@ -4396,6 +4396,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     const formEl = contentEl.createDiv({ cls: "voice-briefing-quick-options-form" });
     this.createSection(formEl, "\u{1F50A} TTS Engine", (container) => {
       const select = container.createEl("select", { cls: "voice-briefing-select" });
+      this.applyDarkThemeSelectStyle(select);
       const engines = [
         { value: "gemini", label: "\u{1F916} Gemini TTS (Recommended)" },
         { value: "edge", label: "\u{1F537} Edge TTS (Free)" },
@@ -4415,6 +4416,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     if (this.currentOptions.ttsEngine === "gemini") {
       this.createSection(formEl, "\u{1F3AD} Voice", (container) => {
         const select = container.createEl("select", { cls: "voice-briefing-select" });
+        this.applyDarkThemeSelectStyle(select);
         const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
         const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");
         const femaleGroup = select.createEl("optgroup", { attr: { label: "\u{1F469} Female Voices" } });
@@ -4443,6 +4445,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
       });
       this.createSection(formEl, "\u{1F310} Language", (container) => {
         const select = container.createEl("select", { cls: "voice-briefing-select" });
+        this.applyDarkThemeSelectStyle(select);
         GEMINI_TTS_LANGUAGES.forEach((lang) => {
           const option = select.createEl("option", {
             text: lang.label,
@@ -4460,6 +4463,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     if (this.currentOptions.ttsEngine === "edge") {
       this.createSection(formEl, "\u{1F3AD} Edge Voice", (container) => {
         const select = container.createEl("select", { cls: "voice-briefing-select" });
+        this.applyDarkThemeSelectStyle(select);
         const edgeVoices = {
           "Korean": ["ko-KR-SunHiNeural", "ko-KR-InJoonNeural"],
           "English (US)": ["en-US-AriaNeural", "en-US-GuyNeural", "en-US-JennyNeural"],
@@ -4492,6 +4496,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     }
     this.createSection(formEl, "\u{1F4DD} Briefing Style", (container) => {
       const select = container.createEl("select", { cls: "voice-briefing-select" });
+      this.applyDarkThemeSelectStyle(select);
       const styles = [
         { value: "metaphor", label: "\u{1F31F} Metaphorical (Easy analogies)" },
         { value: "feynman", label: "\u{1F393} Feynman Technique (Teaching style)" },
@@ -4552,6 +4557,32 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
   }
   refreshForm() {
     this.onOpen();
+  }
+  /**
+   * Apply inline styles to select element for dark theme visibility
+   * This ensures the selected value is visible regardless of Obsidian's theme
+   */
+  applyDarkThemeSelectStyle(select) {
+    const isDarkTheme = document.body.classList.contains("theme-dark");
+    if (isDarkTheme) {
+      select.style.color = "#fafafa";
+      select.style.setProperty("-webkit-text-fill-color", "#fafafa", "important");
+    }
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === "class") {
+          const isDark = document.body.classList.contains("theme-dark");
+          if (isDark) {
+            select.style.color = "#fafafa";
+            select.style.setProperty("-webkit-text-fill-color", "#fafafa", "important");
+          } else {
+            select.style.color = "#1a1a1a";
+            select.style.setProperty("-webkit-text-fill-color", "#1a1a1a", "important");
+          }
+        }
+      });
+    });
+    observer.observe(document.body, { attributes: true });
   }
   onClose() {
     const { contentEl } = this;

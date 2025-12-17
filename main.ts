@@ -193,6 +193,7 @@ class QuickOptionsModal extends Modal {
 		// TTS Engine Selection
 		this.createSection(formEl, '🔊 TTS Engine', (container) => {
 			const select = container.createEl('select', { cls: 'voice-briefing-select' });
+			this.applyDarkThemeSelectStyle(select);
 
 			const engines = [
 				{ value: 'gemini', label: '🤖 Gemini TTS (Recommended)' },
@@ -217,6 +218,7 @@ class QuickOptionsModal extends Modal {
 		if (this.currentOptions.ttsEngine === 'gemini') {
 			this.createSection(formEl, '🎭 Voice', (container) => {
 				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+				this.applyDarkThemeSelectStyle(select);
 
 				// Group voices by gender
 				const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
@@ -253,6 +255,7 @@ class QuickOptionsModal extends Modal {
 
 			this.createSection(formEl, '🌐 Language', (container) => {
 				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+				this.applyDarkThemeSelectStyle(select);
 
 				GEMINI_TTS_LANGUAGES.forEach(lang => {
 					const option = select.createEl('option', {
@@ -274,6 +277,7 @@ class QuickOptionsModal extends Modal {
 		if (this.currentOptions.ttsEngine === 'edge') {
 			this.createSection(formEl, '🎭 Edge Voice', (container) => {
 				const select = container.createEl('select', { cls: 'voice-briefing-select' });
+				this.applyDarkThemeSelectStyle(select);
 
 				const edgeVoices: Record<string, string[]> = {
 					'Korean': ['ko-KR-SunHiNeural', 'ko-KR-InJoonNeural'],
@@ -313,6 +317,7 @@ class QuickOptionsModal extends Modal {
 		// Briefing Style Selection
 		this.createSection(formEl, '📝 Briefing Style', (container) => {
 			const select = container.createEl('select', { cls: 'voice-briefing-select' });
+			this.applyDarkThemeSelectStyle(select);
 
 			const styles = [
 				{ value: 'metaphor', label: '🌟 Metaphorical (Easy analogies)' },
@@ -390,6 +395,38 @@ class QuickOptionsModal extends Modal {
 
 	private refreshForm() {
 		this.onOpen();
+	}
+
+	/**
+	 * Apply inline styles to select element for dark theme visibility
+	 * This ensures the selected value is visible regardless of Obsidian's theme
+	 */
+	private applyDarkThemeSelectStyle(select: HTMLSelectElement) {
+		// Check if dark theme is active
+		const isDarkTheme = document.body.classList.contains('theme-dark');
+
+		if (isDarkTheme) {
+			select.style.color = '#fafafa';
+			select.style.setProperty('-webkit-text-fill-color', '#fafafa', 'important');
+		}
+
+		// Also observe theme changes
+		const observer = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				if (mutation.attributeName === 'class') {
+					const isDark = document.body.classList.contains('theme-dark');
+					if (isDark) {
+						select.style.color = '#fafafa';
+						select.style.setProperty('-webkit-text-fill-color', '#fafafa', 'important');
+					} else {
+						select.style.color = '#1a1a1a';
+						select.style.setProperty('-webkit-text-fill-color', '#1a1a1a', 'important');
+					}
+				}
+			});
+		});
+
+		observer.observe(document.body, { attributes: true });
 	}
 
 	onClose() {

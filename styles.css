@@ -422,19 +422,34 @@
 }
 
 .theme-dark .voice-briefing-select {
-	background: #3a3a3a;
+	background-color: #3a3a3a !important;
 	color: #fafafa !important;
 	-webkit-text-fill-color: #fafafa !important;
+	text-shadow: 0 0 0 #fafafa !important;
 	border-color: #fafafa;
 	box-shadow: 4px 4px 0px #fafafa;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23fafafa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: right 16px center;
 	opacity: 1 !important;
+	-moz-appearance: none !important;
+	text-indent: 0.01px !important;
 }
 
-/* Fix for selected value visibility in dark theme */
-.theme-dark .voice-briefing-select:not(:focus):valid {
+/* Force text visibility for selected value in dark theme */
+.theme-dark .voice-briefing-select,
+.theme-dark .voice-briefing-select:focus,
+.theme-dark .voice-briefing-select:active,
+.theme-dark .voice-briefing-select:valid,
+.theme-dark select.voice-briefing-select {
+	color: #fafafa !important;
+	-webkit-text-fill-color: #fafafa !important;
+	text-shadow: 0 0 0 #fafafa !important;
+}
+
+/* Obsidian-specific select override */
+.theme-dark .modal .voice-briefing-select,
+.theme-dark .modal-container .voice-briefing-select {
 	color: #fafafa !important;
 	-webkit-text-fill-color: #fafafa !important;
 }
