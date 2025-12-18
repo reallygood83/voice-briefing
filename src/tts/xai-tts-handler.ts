@@ -139,8 +139,9 @@ export class XaiTTSHandler {
 					textLength: options.text.length
 				});
 
-				// Create WebSocket connection with model parameter
-				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&token=${ephemeralToken}`;
+				// Create WebSocket connection
+				// Use access_token query param for browser-based auth
+				const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
 				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
