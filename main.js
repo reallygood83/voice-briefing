@@ -244,6 +244,7 @@ var init_xai_tts_handler = __esm({
       constructor() {
         this.WS_URL = "wss://api.x.ai/v1/realtime";
         this.CLIENT_SECRETS_URL = "https://api.x.ai/v1/realtime/client_secrets";
+        this.MODEL = "grok-2-voice-preview-public";
       }
       /**
        * Get ephemeral token for client-side WebSocket connection
@@ -312,8 +313,8 @@ var init_xai_tts_handler = __esm({
           try {
             const audioChunks = [];
             const maskedToken = ephemeralToken.substring(0, 10) + "...";
-            console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?access_token=${maskedToken}`);
-            const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
+            console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
+            const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
             const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;

@@ -21,6 +21,7 @@ export const XAI_TTS_VOICES = [
 export class XaiTTSHandler {
 	private readonly WS_URL = 'wss://api.x.ai/v1/realtime';
 	private readonly CLIENT_SECRETS_URL = 'https://api.x.ai/v1/realtime/client_secrets';
+	private readonly MODEL = 'grok-2-voice-preview-public';
 
 	/**
 	 * Get ephemeral token for client-side WebSocket connection
@@ -97,9 +98,10 @@ export class XaiTTSHandler {
 				// Create WebSocket connection using Native Browser API
 				// Authenticate via access_token query parameter (ephemeral token method)
 				const maskedToken = ephemeralToken.substring(0, 10) + '...';
-				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?access_token=${maskedToken}`);
+				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
 
-				const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
+				// Re-add model parameter which is required
+				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
 				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
