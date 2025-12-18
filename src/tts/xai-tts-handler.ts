@@ -140,7 +140,7 @@ export class XaiTTSHandler {
 				});
 
 				// Create WebSocket connection with model parameter
-				const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
+				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&token=${ephemeralToken}`;
 				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;

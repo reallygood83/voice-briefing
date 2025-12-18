@@ -340,7 +340,7 @@ var init_xai_tts_handler = __esm({
               voice: voiceName,
               textLength: options.text.length
             });
-            const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
+            const wsUrl = `${this.WS_URL}?model=${this.MODEL}&token=${ephemeralToken}`;
             const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;
