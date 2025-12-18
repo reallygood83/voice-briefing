@@ -1,6 +1,6 @@
 import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
-import { WebSocket } from 'ws';
+import WebSocket from 'ws';
 
 export interface XaiTTSOptions {
 	apiKey: string;
@@ -119,7 +119,7 @@ export class XaiTTSHandler {
 					ws.send(JSON.stringify(authMessage));
 				};
 
-				ws.onmessage = (event) => {
+				ws.onmessage = (event: any) => {
 					try {
 						const message = JSON.parse(event.data as string);
 						// console.log('xAI message type:', message.type);
@@ -197,12 +197,12 @@ export class XaiTTSHandler {
 					}
 				};
 
-				ws.onerror = (error) => {
+				ws.onerror = (error: any) => {
 					console.error('xAI WebSocket error:', error);
 					reject(new Error('xAI WebSocket connection failed. Please check your network connection.'));
 				};
 
-				ws.onclose = (event) => {
+				ws.onclose = (event: any) => {
 					console.log('xAI WebSocket closed:', event.code, event.reason);
 					if (!sessionCreated && !authenticated && event.code !== 1000) {
 						reject(new Error('xAI WebSocket connection closed unexpectedly. Authentication may have failed.'));
