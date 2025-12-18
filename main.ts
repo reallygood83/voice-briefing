@@ -155,6 +155,7 @@ class ProgressModal extends Modal {
 
 // Import Gemini TTS voices and languages
 import { GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './src/tts/gemini-tts-handler';
+import { XAI_TTS_VOICES } from './src/tts/xai-tts-handler';
 
 // Quick Options Modal - Neo-Brutalism Style
 class QuickOptionsModal extends Modal {
@@ -171,6 +172,7 @@ class QuickOptionsModal extends Modal {
 			geminiVoice: settings.geminiTtsVoice,
 			geminiLanguage: settings.geminiTtsLanguage,
 			edgeVoice: settings.edgeVoice,
+			xaiVoice: settings.xaiTtsVoice,
 			briefingStyle: settings.briefingStyle,
 			customPrompt: ''
 		};
@@ -192,24 +194,15 @@ class QuickOptionsModal extends Modal {
 
 		// TTS Engine Selection
 		this.createSection(formEl, '🔊 TTS Engine', (container) => {
-			const select = container.createEl('select', { cls: 'voice-briefing-select' });
-			this.applyDarkThemeSelectStyle(select);
-
 			const engines = [
 				{ value: 'gemini', label: '🤖 Gemini TTS (Recommended)' },
+				{ value: 'xai', label: '🚀 xAI Grok TTS (Premium)' },
 				{ value: 'edge', label: '🔷 Edge TTS (Free)' },
 				{ value: 'elevenlabs', label: '🟣 ElevenLabs (Premium)' }
 			];
 
-			engines.forEach(engine => {
-				const option = select.createEl('option', { text: engine.label, value: engine.value });
-				if (engine.value === this.currentOptions.ttsEngine) {
-					option.selected = true;
-				}
-			});
-
-			select.addEventListener('change', () => {
-				this.currentOptions.ttsEngine = select.value as 'edge' | 'elevenlabs' | 'gemini';
+			this.createCustomDropdown(container, engines, this.currentOptions.ttsEngine, (value) => {
+				this.currentOptions.ttsEngine = value as 'edge' | 'elevenlabs' | 'gemini' | 'xai';
 				this.refreshForm();
 			});
 		});
@@ -217,68 +210,98 @@ class QuickOptionsModal extends Modal {
 		// Gemini Voice Selection (only show if Gemini is selected)
 		if (this.currentOptions.ttsEngine === 'gemini') {
 			this.createSection(formEl, '🎭 Voice', (container) => {
-				const select = container.createEl('select', { cls: 'voice-briefing-select' });
-				this.applyDarkThemeSelectStyle(select);
+				// Build options with groups
+				const voiceOptions: { value: string; label: string; group?: string }[] = [];
 
-				// Group voices by gender
 				const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
 				const maleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'M');
 
-				// Female voices group
-				const femaleGroup = select.createEl('optgroup', { attr: { label: '👩 Female Voices' } });
 				femaleVoices.forEach(voice => {
-					const option = femaleGroup.createEl('option', {
-						text: `${voice.name} - ${voice.style}`,
-						value: voice.name
+					voiceOptions.push({
+						value: voice.name,
+						label: `${voice.name} - ${voice.style}`,
+						group: '👩 Female Voices'
 					});
-					if (voice.name === this.currentOptions.geminiVoice) {
-						option.selected = true;
-					}
 				});
 
-				// Male voices group
-				const maleGroup = select.createEl('optgroup', { attr: { label: '👨 Male Voices' } });
 				maleVoices.forEach(voice => {
-					const option = maleGroup.createEl('option', {
-						text: `${voice.name} - ${voice.style}`,
-						value: voice.name
+					voiceOptions.push({
+						value: voice.name,
+						label: `${voice.name} - ${voice.style}`,
+						group: '👨 Male Voices'
 					});
-					if (voice.name === this.currentOptions.geminiVoice) {
-						option.selected = true;
-					}
 				});
 
-				select.addEventListener('change', () => {
-					this.currentOptions.geminiVoice = select.value;
+				this.createCustomDropdown(container, voiceOptions, this.currentOptions.geminiVoice, (value) => {
+					this.currentOptions.geminiVoice = value;
 				});
 			});
 
 			this.createSection(formEl, '🌐 Language', (container) => {
-				const select = container.createEl('select', { cls: 'voice-briefing-select' });
-				this.applyDarkThemeSelectStyle(select);
+				const langOptions = GEMINI_TTS_LANGUAGES.map(lang => ({
+					value: lang.code,
+					label: lang.label
+				}));
 
-				GEMINI_TTS_LANGUAGES.forEach(lang => {
-					const option = select.createEl('option', {
-						text: lang.label,
-						value: lang.code
-					});
-					if (lang.code === this.currentOptions.geminiLanguage) {
-						option.selected = true;
-					}
-				});
-
-				select.addEventListener('change', () => {
-					this.currentOptions.geminiLanguage = select.value;
+				this.createCustomDropdown(container, langOptions, this.currentOptions.geminiLanguage, (value) => {
+					this.currentOptions.geminiLanguage = value;
 				});
 			});
+		}
+
+		// xAI Voice Selection (only show if xAI is selected)
+		if (this.currentOptions.ttsEngine === 'xai') {
+			this.createSection(formEl, '🎭 xAI Voice', (container) => {
+				// Import XAI_TTS_VOICES from the handler
+				const xaiVoices = [
+					{ name: 'Sal', style: 'Conversational', gender: 'M' },
+					{ name: 'Rex', style: 'Professional', gender: 'M' },
+					{ name: 'Eve', style: 'Warm', gender: 'F' },
+					{ name: 'Leo', style: 'Energetic', gender: 'M' },
+					{ name: 'Ara', style: 'Friendly', gender: 'F' },
+					{ name: 'Mika', style: 'Casual', gender: 'F' },
+					{ name: 'Valentin', style: 'Smooth', gender: 'M' }
+				];
+
+				const voiceOptions: { value: string; label: string; group?: string }[] = [];
+
+				const femaleVoices = xaiVoices.filter(v => v.gender === 'F');
+				const maleVoices = xaiVoices.filter(v => v.gender === 'M');
+
+				femaleVoices.forEach(voice => {
+					voiceOptions.push({
+						value: voice.name,
+						label: `${voice.name} - ${voice.style}`,
+						group: '👩 Female Voices'
+					});
+				});
+
+				maleVoices.forEach(voice => {
+					voiceOptions.push({
+						value: voice.name,
+						label: `${voice.name} - ${voice.style}`,
+						group: '👨 Male Voices'
+					});
+				});
+
+				this.createCustomDropdown(container, voiceOptions, this.currentOptions.xaiVoice, (value) => {
+					this.currentOptions.xaiVoice = value;
+				});
+			});
+
+			// xAI API key notice
+			if (!this.settings.xaiApiKey) {
+				const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
+				noteEl.createEl('p', {
+					text: '⚠️ xAI API key required. Configure in Plugin Settings.',
+					cls: 'voice-briefing-note-text'
+				});
+			}
 		}
 
 		// Edge Voice Selection (only show if Edge is selected)
 		if (this.currentOptions.ttsEngine === 'edge') {
 			this.createSection(formEl, '🎭 Edge Voice', (container) => {
-				const select = container.createEl('select', { cls: 'voice-briefing-select' });
-				this.applyDarkThemeSelectStyle(select);
-
 				const edgeVoices: Record<string, string[]> = {
 					'Korean': ['ko-KR-SunHiNeural', 'ko-KR-InJoonNeural'],
 					'English (US)': ['en-US-AriaNeural', 'en-US-GuyNeural', 'en-US-JennyNeural'],
@@ -289,18 +312,19 @@ class QuickOptionsModal extends Modal {
 					'German': ['de-DE-KatjaNeural', 'de-DE-ConradNeural']
 				};
 
+				const voiceOptions: { value: string; label: string; group?: string }[] = [];
 				Object.entries(edgeVoices).forEach(([lang, voices]) => {
-					const group = select.createEl('optgroup', { attr: { label: lang } });
 					voices.forEach(voice => {
-						const option = group.createEl('option', { text: voice, value: voice });
-						if (voice === this.currentOptions.edgeVoice) {
-							option.selected = true;
-						}
+						voiceOptions.push({
+							value: voice,
+							label: voice,
+							group: lang
+						});
 					});
 				});
 
-				select.addEventListener('change', () => {
-					this.currentOptions.edgeVoice = select.value;
+				this.createCustomDropdown(container, voiceOptions, this.currentOptions.edgeVoice, (value) => {
+					this.currentOptions.edgeVoice = value;
 				});
 			});
 		}
@@ -316,9 +340,6 @@ class QuickOptionsModal extends Modal {
 
 		// Briefing Style Selection
 		this.createSection(formEl, '📝 Briefing Style', (container) => {
-			const select = container.createEl('select', { cls: 'voice-briefing-select' });
-			this.applyDarkThemeSelectStyle(select);
-
 			const styles = [
 				{ value: 'metaphor', label: '🌟 Metaphorical (Easy analogies)' },
 				{ value: 'feynman', label: '🎓 Feynman Technique (Teaching style)' },
@@ -326,15 +347,8 @@ class QuickOptionsModal extends Modal {
 				{ value: 'custom', label: '✏️ Custom (Use prompt below)' }
 			];
 
-			styles.forEach(style => {
-				const option = select.createEl('option', { text: style.label, value: style.value });
-				if (style.value === this.currentOptions.briefingStyle) {
-					option.selected = true;
-				}
-			});
-
-			select.addEventListener('change', () => {
-				this.currentOptions.briefingStyle = select.value as 'metaphor' | 'feynman' | 'anchor' | 'custom';
+			this.createCustomDropdown(container, styles, this.currentOptions.briefingStyle, (value) => {
+				this.currentOptions.briefingStyle = value as 'metaphor' | 'feynman' | 'anchor' | 'custom';
 				this.refreshForm();
 			});
 		});
@@ -398,35 +412,124 @@ class QuickOptionsModal extends Modal {
 	}
 
 	/**
-	 * Apply inline styles to select element for dark theme visibility
-	 * This ensures the selected value is visible regardless of Obsidian's theme
+	 * Create a custom dropdown component that works in dark theme
+	 * Uses a visible div for display instead of native select (which has OS-level rendering issues)
 	 */
-	private applyDarkThemeSelectStyle(select: HTMLSelectElement) {
-		// Check if dark theme is active
-		const isDarkTheme = document.body.classList.contains('theme-dark');
+	private createCustomDropdown(
+		container: HTMLElement,
+		options: { value: string; label: string; group?: string }[],
+		selectedValue: string,
+		onChange: (value: string) => void
+	): HTMLElement {
+		const wrapper = container.createDiv({ cls: 'voice-briefing-custom-dropdown' });
 
-		if (isDarkTheme) {
-			select.style.color = '#fafafa';
-			select.style.setProperty('-webkit-text-fill-color', '#fafafa', 'important');
-		}
+		// Find the selected option's label
+		const selectedOption = options.find(opt => opt.value === selectedValue);
+		const selectedLabel = selectedOption ? selectedOption.label : options[0]?.label || '';
 
-		// Also observe theme changes
-		const observer = new MutationObserver((mutations) => {
-			mutations.forEach((mutation) => {
-				if (mutation.attributeName === 'class') {
-					const isDark = document.body.classList.contains('theme-dark');
-					if (isDark) {
-						select.style.color = '#fafafa';
-						select.style.setProperty('-webkit-text-fill-color', '#fafafa', 'important');
-					} else {
-						select.style.color = '#1a1a1a';
-						select.style.setProperty('-webkit-text-fill-color', '#1a1a1a', 'important');
-					}
+		// Display element (always visible and fully controlled by CSS)
+		const display = wrapper.createDiv({ cls: 'voice-briefing-dropdown-display' });
+		display.textContent = selectedLabel;
+
+		// Arrow indicator
+		const arrow = wrapper.createDiv({ cls: 'voice-briefing-dropdown-arrow' });
+		arrow.textContent = '▼';
+
+		// Options list (hidden by default)
+		const optionsList = wrapper.createDiv({ cls: 'voice-briefing-dropdown-options' });
+		optionsList.style.display = 'none';
+
+		// Group options if they have groups
+		const groups = new Map<string, { value: string; label: string }[]>();
+		const ungrouped: { value: string; label: string }[] = [];
+
+		options.forEach(opt => {
+			if (opt.group) {
+				if (!groups.has(opt.group)) {
+					groups.set(opt.group, []);
 				}
+				groups.get(opt.group)!.push(opt);
+			} else {
+				ungrouped.push(opt);
+			}
+		});
+
+		// Render ungrouped options first
+		ungrouped.forEach(opt => {
+			const optionEl = optionsList.createDiv({
+				cls: 'voice-briefing-dropdown-option' + (opt.value === selectedValue ? ' selected' : ''),
+				text: opt.label
+			});
+			optionEl.dataset.value = opt.value;
+		});
+
+		// Render grouped options
+		groups.forEach((groupOptions, groupName) => {
+			const groupEl = optionsList.createDiv({ cls: 'voice-briefing-dropdown-group' });
+			groupEl.createDiv({ cls: 'voice-briefing-dropdown-group-label', text: groupName });
+
+			groupOptions.forEach(opt => {
+				const optionEl = groupEl.createDiv({
+					cls: 'voice-briefing-dropdown-option' + (opt.value === selectedValue ? ' selected' : ''),
+					text: opt.label
+				});
+				optionEl.dataset.value = opt.value;
 			});
 		});
 
-		observer.observe(document.body, { attributes: true });
+		// Toggle dropdown on click
+		let isOpen = false;
+
+		const toggleDropdown = (e: Event) => {
+			e.stopPropagation();
+			isOpen = !isOpen;
+			optionsList.style.display = isOpen ? 'block' : 'none';
+			wrapper.classList.toggle('open', isOpen);
+		};
+
+		display.addEventListener('click', toggleDropdown);
+		arrow.addEventListener('click', toggleDropdown);
+
+		// Handle option selection
+		optionsList.addEventListener('click', (e) => {
+			const target = e.target as HTMLElement;
+			if (target.classList.contains('voice-briefing-dropdown-option')) {
+				const value = target.dataset.value || '';
+				display.textContent = target.textContent || '';
+
+				// Update selected state
+				optionsList.querySelectorAll('.voice-briefing-dropdown-option').forEach(el => {
+					el.classList.remove('selected');
+				});
+				target.classList.add('selected');
+
+				// Close dropdown
+				isOpen = false;
+				optionsList.style.display = 'none';
+				wrapper.classList.remove('open');
+
+				// Trigger change callback
+				onChange(value);
+			}
+		});
+
+		// Close dropdown when clicking outside
+		const closeDropdown = (e: Event) => {
+			if (!wrapper.contains(e.target as Node)) {
+				isOpen = false;
+				optionsList.style.display = 'none';
+				wrapper.classList.remove('open');
+			}
+		};
+
+		document.addEventListener('click', closeDropdown);
+
+		// Store cleanup function
+		(wrapper as any)._cleanup = () => {
+			document.removeEventListener('click', closeDropdown);
+		};
+
+		return wrapper;
 	}
 
 	onClose() {
@@ -462,7 +565,7 @@ interface VoiceBriefingSettings {
 	modelName?: string;
 
 	// TTS Settings
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
 	edgeVoice: string;
 	elevenLabsApiKey: string;
 	elevenLabsVoiceId: string;
@@ -470,6 +573,9 @@ interface VoiceBriefingSettings {
 	// Gemini TTS Settings
 	geminiTtsVoice: string;
 	geminiTtsLanguage: string;
+
+	// xAI TTS Settings
+	xaiTtsVoice: string;
 
 	// Cloud Sharing Settings
 	cloudSharingEnabled: boolean;
@@ -485,10 +591,11 @@ interface VoiceBriefingSettings {
 
 // Quick Options interface for modal
 interface QuickOptions {
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
 	geminiVoice: string;
 	geminiLanguage: string;
 	edgeVoice: string;
+	xaiVoice: string;
 	briefingStyle: 'metaphor' | 'feynman' | 'anchor' | 'custom';
 	customPrompt: string;
 }
@@ -519,6 +626,9 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	// Gemini TTS defaults
 	geminiTtsVoice: 'Kore',
 	geminiTtsLanguage: 'auto',
+
+	// xAI TTS defaults
+	xaiTtsVoice: 'Sal',
 
 	cloudSharingEnabled: false,
 	googleDriveConnected: false,
@@ -668,7 +778,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 				// Gemini TTS options
 				geminiApiKey: this.settings.geminiApiKey,
 				geminiVoice: options.geminiVoice,
-				geminiLanguage: options.geminiLanguage
+				geminiLanguage: options.geminiLanguage,
+				// xAI TTS options
+				xaiApiKey: this.settings.xaiApiKey,
+				xaiVoice: options.xaiVoice
 			});
 
 			if (!ttsResult.success) {
@@ -1125,6 +1238,43 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 						.onChange(async (value) => {
 							this.plugin.settings.geminiTtsLanguage = value;
 							await this.plugin.saveSettings();
+						});
+				});
+		}
+
+		// xAI TTS Settings
+		if (this.plugin.settings.ttsEngine === 'xai') {
+			const xaiInfo = containerEl.createDiv('voice-briefing-info');
+			xaiInfo.createEl('p', {
+				text: '🤖 xAI TTS uses the same API key configured above in AI Settings.',
+				cls: 'setting-item-description'
+			});
+
+			new Setting(containerEl)
+				.setName('Default xAI Voice')
+				.setDesc('Select the default voice for xAI TTS')
+				.addDropdown(dropdown => {
+					// Group voices by gender
+					const maleVoices = XAI_TTS_VOICES.filter(v => v.gender === 'M');
+					const femaleVoices = XAI_TTS_VOICES.filter(v => v.gender === 'F');
+
+					dropdown.addOption('', '── Male Voices ──');
+					maleVoices.forEach(voice => {
+						dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
+					});
+
+					dropdown.addOption('', '── Female Voices ──');
+					femaleVoices.forEach(voice => {
+						dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
+					});
+
+					return dropdown
+						.setValue(this.plugin.settings.xaiTtsVoice)
+						.onChange(async (value) => {
+							if (value) {
+								this.plugin.settings.xaiTtsVoice = value;
+								await this.plugin.saveSettings();
+							}
 						});
 				});
 		}

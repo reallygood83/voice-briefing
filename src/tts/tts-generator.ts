@@ -2,9 +2,10 @@ import { Notice } from 'obsidian';
 import { EdgeTTSHandler } from './edge-tts-handler';
 import { ElevenLabsHandler } from './elevenlabs-handler';
 import { GeminiTTSHandler, GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './gemini-tts-handler';
+import { XaiTTSHandler, XAI_TTS_VOICES } from './xai-tts-handler';
 
 export interface TTSGenerationOptions {
-	engine: 'edge' | 'elevenlabs' | 'gemini';
+	engine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
 	text: string;
 	outputPath: string;
 
@@ -20,6 +21,10 @@ export interface TTSGenerationOptions {
 	geminiApiKey?: string;
 	geminiVoice?: string;
 	geminiLanguage?: string;
+
+	// xAI TTS options
+	xaiApiKey?: string;
+	xaiVoice?: string;
 }
 
 export interface TTSGenerationResult {
@@ -33,11 +38,13 @@ export class TTSGenerator {
 	private edgeHandler: EdgeTTSHandler;
 	private elevenLabsHandler: ElevenLabsHandler;
 	private geminiHandler: GeminiTTSHandler;
+	private xaiHandler: XaiTTSHandler;
 
 	constructor() {
 		this.edgeHandler = new EdgeTTSHandler();
 		this.elevenLabsHandler = new ElevenLabsHandler();
 		this.geminiHandler = new GeminiTTSHandler();
+		this.xaiHandler = new XaiTTSHandler();
 	}
 
 	async generate(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
@@ -46,6 +53,8 @@ export class TTSGenerator {
 				return await this.generateWithEdgeTTS(options);
 			} else if (options.engine === 'gemini') {
 				return await this.generateWithGeminiTTS(options);
+			} else if (options.engine === 'xai') {
+				return await this.generateWithXaiTTS(options);
 			} else {
 				return await this.generateWithElevenLabs(options);
 			}
@@ -138,5 +147,33 @@ export class TTSGenerator {
 
 	getGeminiLanguages(): Array<{ code: string; label: string }> {
 		return this.geminiHandler.getLanguages();
+	}
+
+	private async generateWithXaiTTS(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
+		if (!options.xaiApiKey) {
+			throw new Error('xAI API key is required for xAI TTS');
+		}
+
+		// xAI TTS outputs WAV, so we adjust the output path
+		let outputPath = options.outputPath;
+		if (outputPath.endsWith('.mp3')) {
+			outputPath = outputPath.replace('.mp3', '.wav');
+		}
+
+		await this.xaiHandler.generate({
+			apiKey: options.xaiApiKey,
+			text: options.text,
+			outputPath: outputPath,
+			voiceName: options.xaiVoice || 'Sal'
+		});
+
+		return {
+			success: true,
+			audioPath: outputPath
+		};
+	}
+
+	getXaiVoices(): Array<{ name: string; style: string; gender: string }> {
+		return this.xaiHandler.getVoices();
 	}
 }

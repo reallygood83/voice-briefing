@@ -227,6 +227,204 @@ var init_gemini_tts_handler = __esm({
   }
 });
 
+// src/tts/xai-tts-handler.ts
+var import_obsidian2, import_promises2, XAI_TTS_VOICES, XaiTTSHandler;
+var init_xai_tts_handler = __esm({
+  "src/tts/xai-tts-handler.ts"() {
+    import_obsidian2 = require("obsidian");
+    import_promises2 = require("fs/promises");
+    XAI_TTS_VOICES = [
+      { name: "Sal", style: "Conversational", gender: "M" },
+      { name: "Rex", style: "Professional", gender: "M" },
+      { name: "Eve", style: "Warm", gender: "F" },
+      { name: "Leo", style: "Energetic", gender: "M" },
+      { name: "Ara", style: "Friendly", gender: "F" },
+      { name: "Mika", style: "Casual", gender: "F" },
+      { name: "Valentin", style: "Smooth", gender: "M" }
+    ];
+    XaiTTSHandler = class {
+      constructor() {
+        this.WS_URL = "wss://api.x.ai/v1/realtime";
+      }
+      async generate(options) {
+        return new Promise((resolve, reject) => {
+          try {
+            const voiceName = options.voiceName || "Sal";
+            const audioChunks = [];
+            console.log("xAI TTS request:", {
+              voice: voiceName,
+              textLength: options.text.length
+            });
+            const ws = new WebSocket(`${this.WS_URL}?model=grok-2-voice`, {
+              // @ts-ignore - headers are supported in Node.js WebSocket
+              headers: {
+                "Authorization": `Bearer ${options.apiKey}`
+              }
+            });
+            let sessionCreated = false;
+            let responseStarted = false;
+            ws.onopen = () => {
+              console.log("xAI WebSocket connected");
+              const sessionConfig = {
+                type: "session.update",
+                session: {
+                  modalities: ["audio", "text"],
+                  voice: voiceName.toLowerCase(),
+                  input_audio_format: "pcm16",
+                  output_audio_format: "pcm16",
+                  turn_detection: null
+                  // Disable turn detection for TTS-only
+                }
+              };
+              ws.send(JSON.stringify(sessionConfig));
+            };
+            ws.onmessage = (event) => {
+              var _a;
+              try {
+                const message = JSON.parse(event.data);
+                console.log("xAI message type:", message.type);
+                switch (message.type) {
+                  case "session.created":
+                  case "session.updated":
+                    sessionCreated = true;
+                    const inputEvent = {
+                      type: "conversation.item.create",
+                      item: {
+                        type: "message",
+                        role: "user",
+                        content: [{
+                          type: "input_text",
+                          text: `Please read the following text aloud: ${options.text}`
+                        }]
+                      }
+                    };
+                    ws.send(JSON.stringify(inputEvent));
+                    const responseEvent = {
+                      type: "response.create",
+                      response: {
+                        modalities: ["audio"]
+                      }
+                    };
+                    ws.send(JSON.stringify(responseEvent));
+                    break;
+                  case "response.audio.delta":
+                    responseStarted = true;
+                    if (message.delta) {
+                      const audioData = Buffer.from(message.delta, "base64");
+                      audioChunks.push(audioData);
+                    }
+                    break;
+                  case "response.audio.done":
+                  case "response.done":
+                    if (audioChunks.length > 0) {
+                      const pcmBuffer = Buffer.concat(audioChunks);
+                      const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 16, 1);
+                      let outputPath = options.outputPath;
+                      if (outputPath.endsWith(".mp3")) {
+                        outputPath = outputPath.replace(".mp3", ".wav");
+                      }
+                      (0, import_promises2.writeFile)(outputPath, wavBuffer).then(() => {
+                        console.log("xAI TTS audio saved to:", outputPath);
+                        new import_obsidian2.Notice("\u2705 Audio generated successfully with xAI TTS");
+                        ws.close();
+                        resolve();
+                      }).catch((err) => {
+                        ws.close();
+                        reject(new Error(`Failed to save audio: ${err.message}`));
+                      });
+                    } else if (message.type === "response.done" && !responseStarted) {
+                      ws.close();
+                      reject(new Error("No audio data received from xAI"));
+                    }
+                    break;
+                  case "error":
+                    ws.close();
+                    reject(new Error(((_a = message.error) == null ? void 0 : _a.message) || "xAI WebSocket error"));
+                    break;
+                }
+              } catch (parseError) {
+                console.error("Failed to parse xAI message:", parseError);
+              }
+            };
+            ws.onerror = (error) => {
+              console.error("xAI WebSocket error:", error);
+              reject(new Error("xAI WebSocket connection failed"));
+            };
+            ws.onclose = (event) => {
+              console.log("xAI WebSocket closed:", event.code, event.reason);
+              if (!sessionCreated) {
+                reject(new Error("xAI WebSocket connection closed unexpectedly"));
+              }
+            };
+            setTimeout(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.close();
+                reject(new Error("xAI TTS generation timed out"));
+              }
+            }, 6e4);
+          } catch (error) {
+            console.error("xAI TTS error:", error);
+            if (error.message.includes("401") || error.message.includes("API_KEY")) {
+              reject(new Error("Invalid xAI API key"));
+            } else if (error.message.includes("429")) {
+              reject(new Error("xAI API rate limit exceeded. Please try again later."));
+            } else {
+              reject(new Error(`xAI TTS generation failed: ${error.message}`));
+            }
+          }
+        });
+      }
+      /**
+       * Convert raw PCM data to WAV format
+       * xAI outputs: 24kHz, 16-bit, mono PCM
+       */
+      pcmToWav(pcmData, sampleRate, bitsPerSample, channels) {
+        const byteRate = sampleRate * channels * (bitsPerSample / 8);
+        const blockAlign = channels * (bitsPerSample / 8);
+        const dataSize = pcmData.length;
+        const headerSize = 44;
+        const fileSize = headerSize + dataSize;
+        const wavBuffer = Buffer.alloc(fileSize);
+        let offset = 0;
+        wavBuffer.write("RIFF", offset);
+        offset += 4;
+        wavBuffer.writeUInt32LE(fileSize - 8, offset);
+        offset += 4;
+        wavBuffer.write("WAVE", offset);
+        offset += 4;
+        wavBuffer.write("fmt ", offset);
+        offset += 4;
+        wavBuffer.writeUInt32LE(16, offset);
+        offset += 4;
+        wavBuffer.writeUInt16LE(1, offset);
+        offset += 2;
+        wavBuffer.writeUInt16LE(channels, offset);
+        offset += 2;
+        wavBuffer.writeUInt32LE(sampleRate, offset);
+        offset += 4;
+        wavBuffer.writeUInt32LE(byteRate, offset);
+        offset += 4;
+        wavBuffer.writeUInt16LE(blockAlign, offset);
+        offset += 2;
+        wavBuffer.writeUInt16LE(bitsPerSample, offset);
+        offset += 2;
+        wavBuffer.write("data", offset);
+        offset += 4;
+        wavBuffer.writeUInt32LE(dataSize, offset);
+        offset += 4;
+        pcmData.copy(wavBuffer, offset);
+        return wavBuffer;
+      }
+      /**
+       * Get list of available voices with their styles and gender
+       */
+      getVoices() {
+        return [...XAI_TTS_VOICES];
+      }
+    };
+  }
+});
+
 // node_modules/axios/lib/helpers/bind.js
 function bind(fn, thisArg) {
   return function wrap() {
@@ -3451,10 +3649,10 @@ Details: ${errorDetails}`);
 });
 
 // src/tts/edge-tts-handler.ts
-var import_obsidian2, import_child_process, import_util, execAsync, EdgeTTSHandler;
+var import_obsidian3, import_child_process, import_util, execAsync, EdgeTTSHandler;
 var init_edge_tts_handler = __esm({
   "src/tts/edge-tts-handler.ts"() {
-    import_obsidian2 = require("obsidian");
+    import_obsidian3 = require("obsidian");
     import_child_process = require("child_process");
     import_util = require("util");
     execAsync = (0, import_util.promisify)(import_child_process.exec);
@@ -3464,7 +3662,7 @@ var init_edge_tts_handler = __esm({
           await this.checkEdgeTTSInstalled();
           const command = `edge-tts --voice "${options.voice}" --text "${this.escapeText(options.text)}" --write-media "${options.outputPath}"`;
           await execAsync(command);
-          new import_obsidian2.Notice("\u2705 Audio generated successfully with Edge TTS");
+          new import_obsidian3.Notice("\u2705 Audio generated successfully with Edge TTS");
         } catch (error) {
           console.error("Edge TTS error:", error);
           if (error.message.includes("edge-tts: command not found")) {
@@ -3501,11 +3699,11 @@ var init_edge_tts_handler = __esm({
 });
 
 // src/tts/elevenlabs-handler.ts
-var import_obsidian3, import_promises2, ElevenLabsHandler;
+var import_obsidian4, import_promises3, ElevenLabsHandler;
 var init_elevenlabs_handler = __esm({
   "src/tts/elevenlabs-handler.ts"() {
-    import_obsidian3 = require("obsidian");
-    import_promises2 = require("fs/promises");
+    import_obsidian4 = require("obsidian");
+    import_promises3 = require("fs/promises");
     ElevenLabsHandler = class {
       constructor() {
         this.API_URL = "https://api.elevenlabs.io/v1";
@@ -3513,7 +3711,7 @@ var init_elevenlabs_handler = __esm({
       async generate(options) {
         try {
           const modelId = options.modelId || "eleven_multilingual_v2";
-          const response = await (0, import_obsidian3.requestUrl)({
+          const response = await (0, import_obsidian4.requestUrl)({
             url: `${this.API_URL}/text-to-speech/${options.voiceId}`,
             method: "POST",
             headers: {
@@ -3536,8 +3734,8 @@ var init_elevenlabs_handler = __esm({
             throw new Error(`ElevenLabs API error: ${response.status}`);
           }
           const buffer = Buffer.from(response.arrayBuffer);
-          await (0, import_promises2.writeFile)(options.outputPath, buffer);
-          new import_obsidian3.Notice("\u2705 Audio generated successfully with ElevenLabs");
+          await (0, import_promises3.writeFile)(options.outputPath, buffer);
+          new import_obsidian4.Notice("\u2705 Audio generated successfully with ElevenLabs");
         } catch (error) {
           console.error("ElevenLabs error:", error);
           if (error.message.includes("401")) {
@@ -3551,7 +3749,7 @@ var init_elevenlabs_handler = __esm({
       }
       async listVoices(apiKey) {
         try {
-          const response = await (0, import_obsidian3.requestUrl)({
+          const response = await (0, import_obsidian4.requestUrl)({
             url: `${this.API_URL}/voices`,
             method: "GET",
             headers: {
@@ -3573,7 +3771,7 @@ var init_elevenlabs_handler = __esm({
       }
       async getUsage(apiKey) {
         try {
-          const response = await (0, import_obsidian3.requestUrl)({
+          const response = await (0, import_obsidian4.requestUrl)({
             url: `${this.API_URL}/user/subscription`,
             method: "GET",
             headers: {
@@ -3608,11 +3806,13 @@ var init_tts_generator = __esm({
     init_edge_tts_handler();
     init_elevenlabs_handler();
     init_gemini_tts_handler();
+    init_xai_tts_handler();
     TTSGenerator = class {
       constructor() {
         this.edgeHandler = new EdgeTTSHandler();
         this.elevenLabsHandler = new ElevenLabsHandler();
         this.geminiHandler = new GeminiTTSHandler();
+        this.xaiHandler = new XaiTTSHandler();
       }
       async generate(options) {
         try {
@@ -3620,6 +3820,8 @@ var init_tts_generator = __esm({
             return await this.generateWithEdgeTTS(options);
           } else if (options.engine === "gemini") {
             return await this.generateWithGeminiTTS(options);
+          } else if (options.engine === "xai") {
+            return await this.generateWithXaiTTS(options);
           } else {
             return await this.generateWithElevenLabs(options);
           }
@@ -3697,6 +3899,28 @@ var init_tts_generator = __esm({
       getGeminiLanguages() {
         return this.geminiHandler.getLanguages();
       }
+      async generateWithXaiTTS(options) {
+        if (!options.xaiApiKey) {
+          throw new Error("xAI API key is required for xAI TTS");
+        }
+        let outputPath = options.outputPath;
+        if (outputPath.endsWith(".mp3")) {
+          outputPath = outputPath.replace(".mp3", ".wav");
+        }
+        await this.xaiHandler.generate({
+          apiKey: options.xaiApiKey,
+          text: options.text,
+          outputPath,
+          voiceName: options.xaiVoice || "Sal"
+        });
+        return {
+          success: true,
+          audioPath: outputPath
+        };
+      }
+      getXaiVoices() {
+        return this.xaiHandler.getVoices();
+      }
     };
   }
 });
@@ -3706,10 +3930,10 @@ var google_oauth_flow_exports = {};
 __export(google_oauth_flow_exports, {
   GoogleOAuthFlow: () => GoogleOAuthFlow
 });
-var import_obsidian4, http, url, GoogleOAuthFlow;
+var import_obsidian5, http, url, GoogleOAuthFlow;
 var init_google_oauth_flow = __esm({
   "src/cloud/google-oauth-flow.ts"() {
-    import_obsidian4 = require("obsidian");
+    import_obsidian5 = require("obsidian");
     http = __toESM(require("http"));
     url = __toESM(require("url"));
     GoogleOAuthFlow = class {
@@ -3775,7 +3999,7 @@ var init_google_oauth_flow = __esm({
               }
             });
             const authUrl = this.buildAuthUrl(redirectUri, codeChallenge);
-            new import_obsidian4.Notice("\u{1F310} Opening browser for Google login...", 3e3);
+            new import_obsidian5.Notice("\u{1F310} Opening browser for Google login...", 3e3);
             const { shell } = require("electron");
             shell.openExternal(authUrl);
             setTimeout(() => {
@@ -3795,7 +4019,7 @@ var init_google_oauth_flow = __esm({
        */
       async refreshAccessToken(refreshToken) {
         try {
-          const response = await (0, import_obsidian4.requestUrl)({
+          const response = await (0, import_obsidian5.requestUrl)({
             url: this.TOKEN_URL,
             method: "POST",
             headers: {
@@ -3836,7 +4060,7 @@ var init_google_oauth_flow = __esm({
        * Exchange authorization code for tokens
        */
       async exchangeCodeForTokens(code, codeVerifier, redirectUri) {
-        const response = await (0, import_obsidian4.requestUrl)({
+        const response = await (0, import_obsidian5.requestUrl)({
           url: this.TOKEN_URL,
           method: "POST",
           headers: {
@@ -4043,10 +4267,10 @@ var google_drive_client_exports = {};
 __export(google_drive_client_exports, {
   GoogleDriveClient: () => GoogleDriveClient
 });
-var import_obsidian5, GoogleDriveClient;
+var import_obsidian6, GoogleDriveClient;
 var init_google_drive_client = __esm({
   "src/cloud/google-drive-client.ts"() {
-    import_obsidian5 = require("obsidian");
+    import_obsidian6 = require("obsidian");
     init_google_oauth_flow();
     GoogleDriveClient = class {
       constructor(config) {
@@ -4076,7 +4300,7 @@ var init_google_drive_client = __esm({
               if (this.config.onTokenRefresh) {
                 await this.config.onTokenRefresh(newTokens);
               }
-              new import_obsidian5.Notice("\u{1F504} Google Drive token refreshed automatically");
+              new import_obsidian6.Notice("\u{1F504} Google Drive token refreshed automatically");
             } catch (error) {
               console.error("Token refresh failed:", error);
               throw new Error("Token refresh failed. Please reconnect Google Drive.");
@@ -4105,7 +4329,7 @@ var init_google_drive_client = __esm({
 Content-Transfer-Encoding: base64\r
 \r
 ` + fileContent.toString("base64") + closeDelimiter;
-          const response = await (0, import_obsidian5.requestUrl)({
+          const response = await (0, import_obsidian6.requestUrl)({
             url: `${this.UPLOAD_URL}/files?uploadType=multipart`,
             method: "POST",
             headers: {
@@ -4120,7 +4344,7 @@ Content-Transfer-Encoding: base64\r
           const fileData = response.json;
           const fileId = fileData.id;
           await this.makeFilePublic(fileId);
-          const fileMetaResponse = await (0, import_obsidian5.requestUrl)({
+          const fileMetaResponse = await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/files/${fileId}?fields=webContentLink,webViewLink`,
             method: "GET",
             headers: {
@@ -4130,7 +4354,7 @@ Content-Transfer-Encoding: base64\r
           const fileMeta = fileMetaResponse.json;
           const publicUrl = `https://drive.google.com/file/d/${fileId}/view`;
           const downloadUrl = fileMeta.webContentLink || `https://drive.google.com/uc?export=view&id=${fileId}`;
-          new import_obsidian5.Notice("\u2601\uFE0F File uploaded to Google Drive successfully");
+          new import_obsidian6.Notice("\u2601\uFE0F File uploaded to Google Drive successfully");
           return {
             success: true,
             fileId,
@@ -4154,7 +4378,7 @@ Content-Transfer-Encoding: base64\r
       async makeFilePublic(fileId) {
         try {
           const accessToken = await this.ensureValidToken();
-          await (0, import_obsidian5.requestUrl)({
+          await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/files/${fileId}/permissions`,
             method: "POST",
             headers: {
@@ -4178,7 +4402,7 @@ Content-Transfer-Encoding: base64\r
             mimeType: "application/vnd.google-apps.folder",
             parents: parentFolderId ? [parentFolderId] : void 0
           };
-          const response = await (0, import_obsidian5.requestUrl)({
+          const response = await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/files`,
             method: "POST",
             headers: {
@@ -4191,7 +4415,7 @@ Content-Transfer-Encoding: base64\r
             throw new Error(`Folder creation failed: ${response.status}`);
           }
           const folderData = response.json;
-          new import_obsidian5.Notice(`\u2705 Folder '${folderName}' created in Google Drive`);
+          new import_obsidian6.Notice(`\u2705 Folder '${folderName}' created in Google Drive`);
           return folderData.id;
         } catch (error) {
           console.error("Failed to create folder:", error);
@@ -4201,7 +4425,7 @@ Content-Transfer-Encoding: base64\r
       async findOrCreateFolder(folderName) {
         try {
           const accessToken = await this.ensureValidToken();
-          const searchResponse = await (0, import_obsidian5.requestUrl)({
+          const searchResponse = await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/files?q=name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
             method: "GET",
             headers: {
@@ -4223,7 +4447,7 @@ Content-Transfer-Encoding: base64\r
       async testConnection() {
         try {
           const accessToken = await this.ensureValidToken();
-          const response = await (0, import_obsidian5.requestUrl)({
+          const response = await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/about?fields=user`,
             method: "GET",
             headers: {
@@ -4238,7 +4462,7 @@ Content-Transfer-Encoding: base64\r
       async getUserInfo() {
         try {
           const accessToken = await this.ensureValidToken();
-          const response = await (0, import_obsidian5.requestUrl)({
+          const response = await (0, import_obsidian6.requestUrl)({
             url: `${this.API_URL}/about?fields=user`,
             method: "GET",
             headers: {
@@ -4267,9 +4491,10 @@ __export(main_exports, {
   default: () => VoiceBriefingPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 init_gemini_tts_handler();
-var ProgressModal = class extends import_obsidian6.Modal {
+init_xai_tts_handler();
+var ProgressModal = class extends import_obsidian7.Modal {
   constructor(app, hasCloudUpload = false) {
     super(app);
     this.steps = [
@@ -4371,7 +4596,7 @@ var ProgressModal = class extends import_obsidian6.Modal {
     contentEl.empty();
   }
 };
-var QuickOptionsModal = class extends import_obsidian6.Modal {
+var QuickOptionsModal = class extends import_obsidian7.Modal {
   constructor(app, settings, onSubmit) {
     super(app);
     this.settings = settings;
@@ -4381,6 +4606,7 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
       geminiVoice: settings.geminiTtsVoice,
       geminiLanguage: settings.geminiTtsLanguage,
       edgeVoice: settings.edgeVoice,
+      xaiVoice: settings.xaiTtsVoice,
       briefingStyle: settings.briefingStyle,
       customPrompt: ""
     };
@@ -4395,75 +4621,92 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     });
     const formEl = contentEl.createDiv({ cls: "voice-briefing-quick-options-form" });
     this.createSection(formEl, "\u{1F50A} TTS Engine", (container) => {
-      const select = container.createEl("select", { cls: "voice-briefing-select" });
-      this.applyDarkThemeSelectStyle(select);
       const engines = [
         { value: "gemini", label: "\u{1F916} Gemini TTS (Recommended)" },
+        { value: "xai", label: "\u{1F680} xAI Grok TTS (Premium)" },
         { value: "edge", label: "\u{1F537} Edge TTS (Free)" },
         { value: "elevenlabs", label: "\u{1F7E3} ElevenLabs (Premium)" }
       ];
-      engines.forEach((engine) => {
-        const option = select.createEl("option", { text: engine.label, value: engine.value });
-        if (engine.value === this.currentOptions.ttsEngine) {
-          option.selected = true;
-        }
-      });
-      select.addEventListener("change", () => {
-        this.currentOptions.ttsEngine = select.value;
+      this.createCustomDropdown(container, engines, this.currentOptions.ttsEngine, (value) => {
+        this.currentOptions.ttsEngine = value;
         this.refreshForm();
       });
     });
     if (this.currentOptions.ttsEngine === "gemini") {
       this.createSection(formEl, "\u{1F3AD} Voice", (container) => {
-        const select = container.createEl("select", { cls: "voice-briefing-select" });
-        this.applyDarkThemeSelectStyle(select);
+        const voiceOptions = [];
         const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
         const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");
-        const femaleGroup = select.createEl("optgroup", { attr: { label: "\u{1F469} Female Voices" } });
         femaleVoices.forEach((voice) => {
-          const option = femaleGroup.createEl("option", {
-            text: `${voice.name} - ${voice.style}`,
-            value: voice.name
+          voiceOptions.push({
+            value: voice.name,
+            label: `${voice.name} - ${voice.style}`,
+            group: "\u{1F469} Female Voices"
           });
-          if (voice.name === this.currentOptions.geminiVoice) {
-            option.selected = true;
-          }
         });
-        const maleGroup = select.createEl("optgroup", { attr: { label: "\u{1F468} Male Voices" } });
         maleVoices.forEach((voice) => {
-          const option = maleGroup.createEl("option", {
-            text: `${voice.name} - ${voice.style}`,
-            value: voice.name
+          voiceOptions.push({
+            value: voice.name,
+            label: `${voice.name} - ${voice.style}`,
+            group: "\u{1F468} Male Voices"
           });
-          if (voice.name === this.currentOptions.geminiVoice) {
-            option.selected = true;
-          }
         });
-        select.addEventListener("change", () => {
-          this.currentOptions.geminiVoice = select.value;
+        this.createCustomDropdown(container, voiceOptions, this.currentOptions.geminiVoice, (value) => {
+          this.currentOptions.geminiVoice = value;
         });
       });
       this.createSection(formEl, "\u{1F310} Language", (container) => {
-        const select = container.createEl("select", { cls: "voice-briefing-select" });
-        this.applyDarkThemeSelectStyle(select);
-        GEMINI_TTS_LANGUAGES.forEach((lang) => {
-          const option = select.createEl("option", {
-            text: lang.label,
-            value: lang.code
-          });
-          if (lang.code === this.currentOptions.geminiLanguage) {
-            option.selected = true;
-          }
-        });
-        select.addEventListener("change", () => {
-          this.currentOptions.geminiLanguage = select.value;
+        const langOptions = GEMINI_TTS_LANGUAGES.map((lang) => ({
+          value: lang.code,
+          label: lang.label
+        }));
+        this.createCustomDropdown(container, langOptions, this.currentOptions.geminiLanguage, (value) => {
+          this.currentOptions.geminiLanguage = value;
         });
       });
     }
+    if (this.currentOptions.ttsEngine === "xai") {
+      this.createSection(formEl, "\u{1F3AD} xAI Voice", (container) => {
+        const xaiVoices = [
+          { name: "Sal", style: "Conversational", gender: "M" },
+          { name: "Rex", style: "Professional", gender: "M" },
+          { name: "Eve", style: "Warm", gender: "F" },
+          { name: "Leo", style: "Energetic", gender: "M" },
+          { name: "Ara", style: "Friendly", gender: "F" },
+          { name: "Mika", style: "Casual", gender: "F" },
+          { name: "Valentin", style: "Smooth", gender: "M" }
+        ];
+        const voiceOptions = [];
+        const femaleVoices = xaiVoices.filter((v) => v.gender === "F");
+        const maleVoices = xaiVoices.filter((v) => v.gender === "M");
+        femaleVoices.forEach((voice) => {
+          voiceOptions.push({
+            value: voice.name,
+            label: `${voice.name} - ${voice.style}`,
+            group: "\u{1F469} Female Voices"
+          });
+        });
+        maleVoices.forEach((voice) => {
+          voiceOptions.push({
+            value: voice.name,
+            label: `${voice.name} - ${voice.style}`,
+            group: "\u{1F468} Male Voices"
+          });
+        });
+        this.createCustomDropdown(container, voiceOptions, this.currentOptions.xaiVoice, (value) => {
+          this.currentOptions.xaiVoice = value;
+        });
+      });
+      if (!this.settings.xaiApiKey) {
+        const noteEl = formEl.createDiv({ cls: "voice-briefing-note" });
+        noteEl.createEl("p", {
+          text: "\u26A0\uFE0F xAI API key required. Configure in Plugin Settings.",
+          cls: "voice-briefing-note-text"
+        });
+      }
+    }
     if (this.currentOptions.ttsEngine === "edge") {
       this.createSection(formEl, "\u{1F3AD} Edge Voice", (container) => {
-        const select = container.createEl("select", { cls: "voice-briefing-select" });
-        this.applyDarkThemeSelectStyle(select);
         const edgeVoices = {
           "Korean": ["ko-KR-SunHiNeural", "ko-KR-InJoonNeural"],
           "English (US)": ["en-US-AriaNeural", "en-US-GuyNeural", "en-US-JennyNeural"],
@@ -4473,17 +4716,18 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
           "French": ["fr-FR-DeniseNeural", "fr-FR-HenriNeural"],
           "German": ["de-DE-KatjaNeural", "de-DE-ConradNeural"]
         };
+        const voiceOptions = [];
         Object.entries(edgeVoices).forEach(([lang, voices]) => {
-          const group = select.createEl("optgroup", { attr: { label: lang } });
           voices.forEach((voice) => {
-            const option = group.createEl("option", { text: voice, value: voice });
-            if (voice === this.currentOptions.edgeVoice) {
-              option.selected = true;
-            }
+            voiceOptions.push({
+              value: voice,
+              label: voice,
+              group: lang
+            });
           });
         });
-        select.addEventListener("change", () => {
-          this.currentOptions.edgeVoice = select.value;
+        this.createCustomDropdown(container, voiceOptions, this.currentOptions.edgeVoice, (value) => {
+          this.currentOptions.edgeVoice = value;
         });
       });
     }
@@ -4495,22 +4739,14 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
       });
     }
     this.createSection(formEl, "\u{1F4DD} Briefing Style", (container) => {
-      const select = container.createEl("select", { cls: "voice-briefing-select" });
-      this.applyDarkThemeSelectStyle(select);
       const styles = [
         { value: "metaphor", label: "\u{1F31F} Metaphorical (Easy analogies)" },
         { value: "feynman", label: "\u{1F393} Feynman Technique (Teaching style)" },
         { value: "anchor", label: "\u{1F4F0} News Anchor (Professional)" },
         { value: "custom", label: "\u270F\uFE0F Custom (Use prompt below)" }
       ];
-      styles.forEach((style) => {
-        const option = select.createEl("option", { text: style.label, value: style.value });
-        if (style.value === this.currentOptions.briefingStyle) {
-          option.selected = true;
-        }
-      });
-      select.addEventListener("change", () => {
-        this.currentOptions.briefingStyle = select.value;
+      this.createCustomDropdown(container, styles, this.currentOptions.briefingStyle, (value) => {
+        this.currentOptions.briefingStyle = value;
         this.refreshForm();
       });
     });
@@ -4559,30 +4795,86 @@ var QuickOptionsModal = class extends import_obsidian6.Modal {
     this.onOpen();
   }
   /**
-   * Apply inline styles to select element for dark theme visibility
-   * This ensures the selected value is visible regardless of Obsidian's theme
+   * Create a custom dropdown component that works in dark theme
+   * Uses a visible div for display instead of native select (which has OS-level rendering issues)
    */
-  applyDarkThemeSelectStyle(select) {
-    const isDarkTheme = document.body.classList.contains("theme-dark");
-    if (isDarkTheme) {
-      select.style.color = "#fafafa";
-      select.style.setProperty("-webkit-text-fill-color", "#fafafa", "important");
-    }
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === "class") {
-          const isDark = document.body.classList.contains("theme-dark");
-          if (isDark) {
-            select.style.color = "#fafafa";
-            select.style.setProperty("-webkit-text-fill-color", "#fafafa", "important");
-          } else {
-            select.style.color = "#1a1a1a";
-            select.style.setProperty("-webkit-text-fill-color", "#1a1a1a", "important");
-          }
+  createCustomDropdown(container, options, selectedValue, onChange) {
+    var _a;
+    const wrapper = container.createDiv({ cls: "voice-briefing-custom-dropdown" });
+    const selectedOption = options.find((opt) => opt.value === selectedValue);
+    const selectedLabel = selectedOption ? selectedOption.label : ((_a = options[0]) == null ? void 0 : _a.label) || "";
+    const display = wrapper.createDiv({ cls: "voice-briefing-dropdown-display" });
+    display.textContent = selectedLabel;
+    const arrow = wrapper.createDiv({ cls: "voice-briefing-dropdown-arrow" });
+    arrow.textContent = "\u25BC";
+    const optionsList = wrapper.createDiv({ cls: "voice-briefing-dropdown-options" });
+    optionsList.style.display = "none";
+    const groups = /* @__PURE__ */ new Map();
+    const ungrouped = [];
+    options.forEach((opt) => {
+      if (opt.group) {
+        if (!groups.has(opt.group)) {
+          groups.set(opt.group, []);
         }
+        groups.get(opt.group).push(opt);
+      } else {
+        ungrouped.push(opt);
+      }
+    });
+    ungrouped.forEach((opt) => {
+      const optionEl = optionsList.createDiv({
+        cls: "voice-briefing-dropdown-option" + (opt.value === selectedValue ? " selected" : ""),
+        text: opt.label
+      });
+      optionEl.dataset.value = opt.value;
+    });
+    groups.forEach((groupOptions, groupName) => {
+      const groupEl = optionsList.createDiv({ cls: "voice-briefing-dropdown-group" });
+      groupEl.createDiv({ cls: "voice-briefing-dropdown-group-label", text: groupName });
+      groupOptions.forEach((opt) => {
+        const optionEl = groupEl.createDiv({
+          cls: "voice-briefing-dropdown-option" + (opt.value === selectedValue ? " selected" : ""),
+          text: opt.label
+        });
+        optionEl.dataset.value = opt.value;
       });
     });
-    observer.observe(document.body, { attributes: true });
+    let isOpen = false;
+    const toggleDropdown = (e) => {
+      e.stopPropagation();
+      isOpen = !isOpen;
+      optionsList.style.display = isOpen ? "block" : "none";
+      wrapper.classList.toggle("open", isOpen);
+    };
+    display.addEventListener("click", toggleDropdown);
+    arrow.addEventListener("click", toggleDropdown);
+    optionsList.addEventListener("click", (e) => {
+      const target = e.target;
+      if (target.classList.contains("voice-briefing-dropdown-option")) {
+        const value = target.dataset.value || "";
+        display.textContent = target.textContent || "";
+        optionsList.querySelectorAll(".voice-briefing-dropdown-option").forEach((el) => {
+          el.classList.remove("selected");
+        });
+        target.classList.add("selected");
+        isOpen = false;
+        optionsList.style.display = "none";
+        wrapper.classList.remove("open");
+        onChange(value);
+      }
+    });
+    const closeDropdown = (e) => {
+      if (!wrapper.contains(e.target)) {
+        isOpen = false;
+        optionsList.style.display = "none";
+        wrapper.classList.remove("open");
+      }
+    };
+    document.addEventListener("click", closeDropdown);
+    wrapper._cleanup = () => {
+      document.removeEventListener("click", closeDropdown);
+    };
+    return wrapper;
   }
   onClose() {
     const { contentEl } = this;
@@ -4611,6 +4903,8 @@ var DEFAULT_SETTINGS = {
   // Gemini TTS defaults
   geminiTtsVoice: "Kore",
   geminiTtsLanguage: "auto",
+  // xAI TTS defaults
+  xaiTtsVoice: "Sal",
   cloudSharingEnabled: false,
   googleDriveConnected: false,
   googleDriveToken: "",
@@ -4621,7 +4915,7 @@ var DEFAULT_SETTINGS = {
   googleDriveFolderId: "",
   linkFormat: "html"
 };
-var VoiceBriefingPlugin = class extends import_obsidian6.Plugin {
+var VoiceBriefingPlugin = class extends import_obsidian7.Plugin {
   async onload() {
     await this.loadSettings();
     this.addRibbonIcon("mic", "Generate Voice Briefing", async () => {
@@ -4640,12 +4934,12 @@ var VoiceBriefingPlugin = class extends import_obsidian6.Plugin {
   async generateVoiceBriefing() {
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) {
-      new import_obsidian6.Notice("No active note found");
+      new import_obsidian7.Notice("No active note found");
       return;
     }
     const currentApiKey = this.getCurrentApiKey();
     if (!currentApiKey) {
-      new import_obsidian6.Notice(`Please set your ${this.settings.aiProvider.toUpperCase()} API key in settings`);
+      new import_obsidian7.Notice(`Please set your ${this.settings.aiProvider.toUpperCase()} API key in settings`);
       return;
     }
     const quickOptionsModal = new QuickOptionsModal(this.app, this.settings, async (options) => {
@@ -4656,17 +4950,17 @@ var VoiceBriefingPlugin = class extends import_obsidian6.Plugin {
   async executeVoiceBriefing(activeFile, options) {
     if (options.ttsEngine === "elevenlabs") {
       if (!this.settings.elevenLabsApiKey) {
-        new import_obsidian6.Notice("Please set your ElevenLabs API key in settings");
+        new import_obsidian7.Notice("Please set your ElevenLabs API key in settings");
         return;
       }
       if (!this.settings.elevenLabsVoiceId) {
-        new import_obsidian6.Notice("Please set your ElevenLabs voice ID in settings");
+        new import_obsidian7.Notice("Please set your ElevenLabs voice ID in settings");
         return;
       }
     }
     if (options.ttsEngine === "gemini") {
       if (!this.settings.geminiApiKey) {
-        new import_obsidian6.Notice("Please set your Gemini API key in settings (same as AI Provider)");
+        new import_obsidian7.Notice("Please set your Gemini API key in settings (same as AI Provider)");
         return;
       }
     }
@@ -4713,7 +5007,10 @@ var VoiceBriefingPlugin = class extends import_obsidian6.Plugin {
         // Gemini TTS options
         geminiApiKey: this.settings.geminiApiKey,
         geminiVoice: options.geminiVoice,
-        geminiLanguage: options.geminiLanguage
+        geminiLanguage: options.geminiLanguage,
+        // xAI TTS options
+        xaiApiKey: this.settings.xaiApiKey,
+        xaiVoice: options.xaiVoice
       });
       if (!ttsResult.success) {
         throw new Error(ttsResult.error || "TTS generation failed");
@@ -4861,7 +5158,7 @@ var VoiceBriefingPlugin = class extends import_obsidian6.Plugin {
     }
   }
 };
-var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
+var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -4871,30 +5168,30 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h1", { text: "Voice Briefing Settings" });
     containerEl.createEl("h2", { text: "\u{1F310} General Settings" });
-    new import_obsidian6.Setting(containerEl).setName("Output Language").setDesc("Select the language for voice briefing generation").addDropdown((dropdown) => dropdown.addOption("ko-KR", "\u{1F1F0}\u{1F1F7} \uD55C\uAD6D\uC5B4 (Korean)").addOption("en-US", "\u{1F1FA}\u{1F1F8} English (US)").addOption("ja-JP", "\u{1F1EF}\u{1F1F5} \u65E5\u672C\u8A9E (Japanese)").addOption("zh-CN", "\u{1F1E8}\u{1F1F3} \u4E2D\u6587 (Chinese)").addOption("es-ES", "\u{1F1EA}\u{1F1F8} Espa\xF1ol (Spanish)").addOption("fr-FR", "\u{1F1EB}\u{1F1F7} Fran\xE7ais (French)").addOption("de-DE", "\u{1F1E9}\u{1F1EA} Deutsch (German)").setValue(this.plugin.settings.language).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("Output Language").setDesc("Select the language for voice briefing generation").addDropdown((dropdown) => dropdown.addOption("ko-KR", "\u{1F1F0}\u{1F1F7} \uD55C\uAD6D\uC5B4 (Korean)").addOption("en-US", "\u{1F1FA}\u{1F1F8} English (US)").addOption("ja-JP", "\u{1F1EF}\u{1F1F5} \u65E5\u672C\u8A9E (Japanese)").addOption("zh-CN", "\u{1F1E8}\u{1F1F3} \u4E2D\u6587 (Chinese)").addOption("es-ES", "\u{1F1EA}\u{1F1F8} Espa\xF1ol (Spanish)").addOption("fr-FR", "\u{1F1EB}\u{1F1F7} Fran\xE7ais (French)").addOption("de-DE", "\u{1F1E9}\u{1F1EA} Deutsch (German)").setValue(this.plugin.settings.language).onChange(async (value) => {
       this.plugin.settings.language = value;
       await this.plugin.saveSettings();
       this.autoSelectVoice(value);
     }));
-    new import_obsidian6.Setting(containerEl).setName("Briefing Style").setDesc("Choose how the briefing should be presented").addDropdown((dropdown) => dropdown.addOption("metaphor", "\u{1F31F} Metaphorical (Easy analogies)").addOption("feynman", "\u{1F393} Feynman Technique (Teaching style)").addOption("anchor", "\u{1F4F0} News Anchor (Professional)").addOption("custom", "\u270F\uFE0F Custom (Define your own)").setValue(this.plugin.settings.briefingStyle).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("Briefing Style").setDesc("Choose how the briefing should be presented").addDropdown((dropdown) => dropdown.addOption("metaphor", "\u{1F31F} Metaphorical (Easy analogies)").addOption("feynman", "\u{1F393} Feynman Technique (Teaching style)").addOption("anchor", "\u{1F4F0} News Anchor (Professional)").addOption("custom", "\u270F\uFE0F Custom (Define your own)").setValue(this.plugin.settings.briefingStyle).onChange(async (value) => {
       this.plugin.settings.briefingStyle = value;
       await this.plugin.saveSettings();
       this.display();
     }));
     if (this.plugin.settings.briefingStyle === "custom") {
-      new import_obsidian6.Setting(containerEl).setName("Custom Style Prompt").setDesc("Define your own briefing style instruction").addTextArea((text) => text.setPlaceholder("Example: Explain concepts as if talking to a 10-year-old...").setValue(this.plugin.settings.customStylePrompt).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Custom Style Prompt").setDesc("Define your own briefing style instruction").addTextArea((text) => text.setPlaceholder("Example: Explain concepts as if talking to a 10-year-old...").setValue(this.plugin.settings.customStylePrompt).onChange(async (value) => {
         this.plugin.settings.customStylePrompt = value;
         await this.plugin.saveSettings();
       }));
     }
     containerEl.createEl("h2", { text: "\u{1F916} AI Provider Settings" });
-    new import_obsidian6.Setting(containerEl).setName("AI Provider").setDesc("Select the AI service for script generation").addDropdown((dropdown) => dropdown.addOption("gemini", "Google Gemini").addOption("xai", "XAI (Grok)").addOption("openai", "OpenAI").addOption("anthropic", "Anthropic (Claude)").setValue(this.plugin.settings.aiProvider).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("AI Provider").setDesc("Select the AI service for script generation").addDropdown((dropdown) => dropdown.addOption("gemini", "Google Gemini").addOption("xai", "XAI (Grok)").addOption("openai", "OpenAI").addOption("anthropic", "Anthropic (Claude)").setValue(this.plugin.settings.aiProvider).onChange(async (value) => {
       this.plugin.settings.aiProvider = value;
       await this.plugin.saveSettings();
       this.display();
     }));
     if (this.plugin.settings.aiProvider === "gemini") {
-      new import_obsidian6.Setting(containerEl).setName("Gemini API Key").setDesc("Enter your Google Gemini API key").addText((text) => {
+      new import_obsidian7.Setting(containerEl).setName("Gemini API Key").setDesc("Enter your Google Gemini API key").addText((text) => {
         text.setPlaceholder("AI...").setValue(this.plugin.settings.geminiApiKey).onChange(async (value) => {
           this.plugin.settings.geminiApiKey = value;
           await this.plugin.saveSettings();
@@ -4902,13 +5199,13 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         text.inputEl.type = "password";
         return text;
       });
-      new import_obsidian6.Setting(containerEl).setName("Gemini Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gemini-2.0-flash").setValue(this.plugin.settings.geminiModel).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Gemini Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gemini-2.0-flash").setValue(this.plugin.settings.geminiModel).onChange(async (value) => {
         this.plugin.settings.geminiModel = value || "gemini-2.0-flash";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "xai") {
-      new import_obsidian6.Setting(containerEl).setName("XAI API Key").setDesc("Enter your XAI (Grok) API key").addText((text) => {
+      new import_obsidian7.Setting(containerEl).setName("XAI API Key").setDesc("Enter your XAI (Grok) API key").addText((text) => {
         text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
           this.plugin.settings.xaiApiKey = value;
           await this.plugin.saveSettings();
@@ -4916,13 +5213,13 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         text.inputEl.type = "password";
         return text;
       });
-      new import_obsidian6.Setting(containerEl).setName("XAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("grok-4-1-fast").setValue(this.plugin.settings.xaiModel).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("XAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("grok-4-1-fast").setValue(this.plugin.settings.xaiModel).onChange(async (value) => {
         this.plugin.settings.xaiModel = value || "grok-4-1-fast";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "openai") {
-      new import_obsidian6.Setting(containerEl).setName("OpenAI API Key").setDesc("Enter your OpenAI API key").addText((text) => {
+      new import_obsidian7.Setting(containerEl).setName("OpenAI API Key").setDesc("Enter your OpenAI API key").addText((text) => {
         text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
           this.plugin.settings.openaiApiKey = value;
           await this.plugin.saveSettings();
@@ -4930,13 +5227,13 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         text.inputEl.type = "password";
         return text;
       });
-      new import_obsidian6.Setting(containerEl).setName("OpenAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gpt-4o").setValue(this.plugin.settings.openaiModel).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("OpenAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gpt-4o").setValue(this.plugin.settings.openaiModel).onChange(async (value) => {
         this.plugin.settings.openaiModel = value || "gpt-4o";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "anthropic") {
-      new import_obsidian6.Setting(containerEl).setName("Anthropic API Key").setDesc("Enter your Anthropic API key").addText((text) => {
+      new import_obsidian7.Setting(containerEl).setName("Anthropic API Key").setDesc("Enter your Anthropic API key").addText((text) => {
         text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.anthropicApiKey).onChange(async (value) => {
           this.plugin.settings.anthropicApiKey = value;
           await this.plugin.saveSettings();
@@ -4944,13 +5241,13 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         text.inputEl.type = "password";
         return text;
       });
-      new import_obsidian6.Setting(containerEl).setName("Anthropic Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("claude-3-5-sonnet-20241022").setValue(this.plugin.settings.anthropicModel).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Anthropic Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("claude-3-5-sonnet-20241022").setValue(this.plugin.settings.anthropicModel).onChange(async (value) => {
         this.plugin.settings.anthropicModel = value || "claude-3-5-sonnet-20241022";
         await this.plugin.saveSettings();
       }));
     }
     containerEl.createEl("h2", { text: "\u{1F50A} Text-to-Speech Settings" });
-    new import_obsidian6.Setting(containerEl).setName("Default TTS Engine").setDesc("Choose the default TTS engine (can be changed per-generation in Quick Options)").addDropdown((dropdown) => dropdown.addOption("gemini", "\u{1F916} Gemini TTS (Recommended)").addOption("edge", "\u{1F537} Edge TTS (Free)").addOption("elevenlabs", "\u{1F7E3} ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("Default TTS Engine").setDesc("Choose the default TTS engine (can be changed per-generation in Quick Options)").addDropdown((dropdown) => dropdown.addOption("gemini", "\u{1F916} Gemini TTS (Recommended)").addOption("edge", "\u{1F537} Edge TTS (Free)").addOption("elevenlabs", "\u{1F7E3} ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
       this.plugin.settings.ttsEngine = value;
       await this.plugin.saveSettings();
       this.display();
@@ -4961,7 +5258,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         text: "\u{1F4A1} Gemini TTS uses the same API key as Gemini AI Provider. 30 voice options available with auto language detection.",
         cls: "setting-item-description"
       });
-      new import_obsidian6.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender)").addDropdown((dropdown) => {
+      new import_obsidian7.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender)").addDropdown((dropdown) => {
         const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
         const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");
         const femaleGroup = dropdown.selectEl.createEl("optgroup", { attr: { label: "\u{1F469} Female Voices" } });
@@ -4989,7 +5286,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
-      new import_obsidian6.Setting(containerEl).setName("Default Gemini Language").setDesc("Select output language (Auto Detect recommended)").addDropdown((dropdown) => {
+      new import_obsidian7.Setting(containerEl).setName("Default Gemini Language").setDesc("Select output language (Auto Detect recommended)").addDropdown((dropdown) => {
         GEMINI_TTS_LANGUAGES.forEach((lang) => {
           dropdown.addOption(lang.code, lang.label);
         });
@@ -4999,8 +5296,33 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
         });
       });
     }
+    if (this.plugin.settings.ttsEngine === "xai") {
+      const xaiInfo = containerEl.createDiv("voice-briefing-info");
+      xaiInfo.createEl("p", {
+        text: "\u{1F916} xAI TTS uses the same API key configured above in AI Settings.",
+        cls: "setting-item-description"
+      });
+      new import_obsidian7.Setting(containerEl).setName("Default xAI Voice").setDesc("Select the default voice for xAI TTS").addDropdown((dropdown) => {
+        const maleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "M");
+        const femaleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "F");
+        dropdown.addOption("", "\u2500\u2500 Male Voices \u2500\u2500");
+        maleVoices.forEach((voice) => {
+          dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
+        });
+        dropdown.addOption("", "\u2500\u2500 Female Voices \u2500\u2500");
+        femaleVoices.forEach((voice) => {
+          dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
+        });
+        return dropdown.setValue(this.plugin.settings.xaiTtsVoice).onChange(async (value) => {
+          if (value) {
+            this.plugin.settings.xaiTtsVoice = value;
+            await this.plugin.saveSettings();
+          }
+        });
+      });
+    }
     if (this.plugin.settings.ttsEngine === "edge") {
-      new import_obsidian6.Setting(containerEl).setName("Default Edge Voice").setDesc("Select Edge TTS voice").addDropdown((dropdown) => {
+      new import_obsidian7.Setting(containerEl).setName("Default Edge Voice").setDesc("Select Edge TTS voice").addDropdown((dropdown) => {
         this.addEdgeVoiceOptions(dropdown);
         return dropdown.setValue(this.plugin.settings.edgeVoice).onChange(async (value) => {
           this.plugin.settings.edgeVoice = value;
@@ -5009,17 +5331,17 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
       });
     }
     if (this.plugin.settings.ttsEngine === "elevenlabs") {
-      new import_obsidian6.Setting(containerEl).setName("ElevenLabs API Key").setDesc("Enter your ElevenLabs API key").addText((text) => text.setPlaceholder("your-api-key").setValue(this.plugin.settings.elevenLabsApiKey).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("ElevenLabs API Key").setDesc("Enter your ElevenLabs API key").addText((text) => text.setPlaceholder("your-api-key").setValue(this.plugin.settings.elevenLabsApiKey).onChange(async (value) => {
         this.plugin.settings.elevenLabsApiKey = value;
         await this.plugin.saveSettings();
       }).inputEl.type = "password");
-      new import_obsidian6.Setting(containerEl).setName("Voice ID").setDesc("ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Voice ID").setDesc("ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
         this.plugin.settings.elevenLabsVoiceId = value;
         await this.plugin.saveSettings();
       }));
     }
     containerEl.createEl("h2", { text: "\u2601\uFE0F Cloud Sharing" });
-    new import_obsidian6.Setting(containerEl).setName("Enable Cloud Sharing").setDesc("Upload audio files to Google Drive for sharing").addToggle((toggle) => toggle.setValue(this.plugin.settings.cloudSharingEnabled).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("Enable Cloud Sharing").setDesc("Upload audio files to Google Drive for sharing").addToggle((toggle) => toggle.setValue(this.plugin.settings.cloudSharingEnabled).onChange(async (value) => {
       this.plugin.settings.cloudSharingEnabled = value;
       await this.plugin.saveSettings();
       this.display();
@@ -5038,12 +5360,12 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
       steps.createEl("li", { text: "Create OAuth 2.0 credentials (Desktop app)" });
       steps.createEl("li", { text: "Copy Client ID and Client Secret below" });
       steps.createEl("li", { text: "Add http://localhost:8585/callback to Authorized redirect URIs" });
-      new import_obsidian6.Setting(containerEl).setName("Client ID").setDesc("OAuth 2.0 Client ID from Google Cloud Console").addText((text) => text.setPlaceholder("xxxx.apps.googleusercontent.com").setValue(this.plugin.settings.googleDriveClientId).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Client ID").setDesc("OAuth 2.0 Client ID from Google Cloud Console").addText((text) => text.setPlaceholder("xxxx.apps.googleusercontent.com").setValue(this.plugin.settings.googleDriveClientId).onChange(async (value) => {
         this.plugin.settings.googleDriveClientId = value;
         await this.plugin.saveSettings();
         this.display();
       }));
-      new import_obsidian6.Setting(containerEl).setName("Client Secret").setDesc("OAuth 2.0 Client Secret from Google Cloud Console").addText((text) => {
+      new import_obsidian7.Setting(containerEl).setName("Client Secret").setDesc("OAuth 2.0 Client Secret from Google Cloud Console").addText((text) => {
         text.setPlaceholder("GOCSPX-...").setValue(this.plugin.settings.googleDriveClientSecret).onChange(async (value) => {
           this.plugin.settings.googleDriveClientSecret = value;
           await this.plugin.saveSettings();
@@ -5054,15 +5376,15 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
       });
       containerEl.createEl("h3", { text: "\u{1F517} Connection Status" });
       const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
-      const connectionSetting = new import_obsidian6.Setting(containerEl).setName("Google Drive Connection").setDesc(this.plugin.settings.googleDriveConnected ? "\u2705 Connected (token auto-refreshes)" : hasCredentials ? "\u{1F534} Not connected - Click to connect" : "\u26A0\uFE0F Enter Client ID and Secret above first");
+      const connectionSetting = new import_obsidian7.Setting(containerEl).setName("Google Drive Connection").setDesc(this.plugin.settings.googleDriveConnected ? "\u2705 Connected (token auto-refreshes)" : hasCredentials ? "\u{1F534} Not connected - Click to connect" : "\u26A0\uFE0F Enter Client ID and Secret above first");
       if (!this.plugin.settings.googleDriveConnected) {
         connectionSetting.addButton((button) => button.setButtonText("Connect with Google").setCta().setDisabled(!hasCredentials).onClick(async () => {
           if (!hasCredentials) {
-            new import_obsidian6.Notice("\u26A0\uFE0F Please enter Client ID and Client Secret first");
+            new import_obsidian7.Notice("\u26A0\uFE0F Please enter Client ID and Client Secret first");
             return;
           }
           try {
-            new import_obsidian6.Notice("\u{1F504} Starting Google OAuth flow...");
+            new import_obsidian7.Notice("\u{1F504} Starting Google OAuth flow...");
             const { GoogleOAuthFlow: GoogleOAuthFlow2 } = await Promise.resolve().then(() => (init_google_oauth_flow(), google_oauth_flow_exports));
             const oauthFlow = new GoogleOAuthFlow2({
               clientId: this.plugin.settings.googleDriveClientId,
@@ -5075,11 +5397,11 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
             this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
             this.plugin.settings.googleDriveConnected = true;
             await this.plugin.saveSettings();
-            new import_obsidian6.Notice("\u2705 Google Drive connected successfully!");
+            new import_obsidian7.Notice("\u2705 Google Drive connected successfully!");
             this.display();
           } catch (error) {
             console.error("OAuth error:", error);
-            new import_obsidian6.Notice(`\u274C Connection failed: ${error.message}`);
+            new import_obsidian7.Notice(`\u274C Connection failed: ${error.message}`);
           }
         }));
       } else {
@@ -5093,7 +5415,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
           );
         }
         connectionSetting.addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
-          new import_obsidian6.Notice("\u{1F504} Testing Google Drive connection...");
+          new import_obsidian7.Notice("\u{1F504} Testing Google Drive connection...");
           try {
             const { GoogleDriveClient: GoogleDriveClient2 } = await Promise.resolve().then(() => (init_google_drive_client(), google_drive_client_exports));
             const client = new GoogleDriveClient2({
@@ -5112,12 +5434,12 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
             const isConnected = await client.testConnection();
             if (isConnected) {
               const userInfo = await client.getUserInfo();
-              new import_obsidian6.Notice(`\u2705 Connected as ${(userInfo == null ? void 0 : userInfo.email) || "Unknown user"}`);
+              new import_obsidian7.Notice(`\u2705 Connected as ${(userInfo == null ? void 0 : userInfo.email) || "Unknown user"}`);
             } else {
-              new import_obsidian6.Notice("\u274C Connection test failed");
+              new import_obsidian7.Notice("\u274C Connection test failed");
             }
           } catch (error) {
-            new import_obsidian6.Notice(`\u274C Connection test failed: ${error.message}`);
+            new import_obsidian7.Notice(`\u274C Connection test failed: ${error.message}`);
           }
         })).addButton((button) => button.setButtonText("Disconnect").setWarning().onClick(async () => {
           this.plugin.settings.googleDriveConnected = false;
@@ -5127,14 +5449,14 @@ var VoiceBriefingSettingTab = class extends import_obsidian6.PluginSettingTab {
           this.plugin.settings.googleDriveFolderId = "";
           await this.plugin.saveSettings();
           this.display();
-          new import_obsidian6.Notice("\u{1F534} Disconnected from Google Drive");
+          new import_obsidian7.Notice("\u{1F534} Disconnected from Google Drive");
         }));
       }
-      new import_obsidian6.Setting(containerEl).setName("Link Format").setDesc("Choose how the audio link should be embedded in your note").addDropdown((dropdown) => dropdown.addOption("html", "HTML Audio Player (Recommended)").addOption("markdown", "Markdown Link").addOption("direct", "Direct URL").setValue(this.plugin.settings.linkFormat).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Link Format").setDesc("Choose how the audio link should be embedded in your note").addDropdown((dropdown) => dropdown.addOption("html", "HTML Audio Player (Recommended)").addOption("markdown", "Markdown Link").addOption("direct", "Direct URL").setValue(this.plugin.settings.linkFormat).onChange(async (value) => {
         this.plugin.settings.linkFormat = value;
         await this.plugin.saveSettings();
       }));
-      new import_obsidian6.Setting(containerEl).setName("Google Drive Folder ID (Optional)").setDesc("Leave empty to upload to root, or paste folder ID from Drive URL").addText((text) => text.setPlaceholder("1a2b3c4d5e6f...").setValue(this.plugin.settings.googleDriveFolderId || "").onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("Google Drive Folder ID (Optional)").setDesc("Leave empty to upload to root, or paste folder ID from Drive URL").addText((text) => text.setPlaceholder("1a2b3c4d5e6f...").setValue(this.plugin.settings.googleDriveFolderId || "").onChange(async (value) => {
         this.plugin.settings.googleDriveFolderId = value;
         await this.plugin.saveSettings();
       }));
