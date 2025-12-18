@@ -304,6 +304,8 @@ var init_xai_tts_handler = __esm({
             return data.access_token;
           if (data.ephemeral_key)
             return data.ephemeral_key;
+          if (data.value)
+            return data.value;
           throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(", ")}`);
         } catch (error) {
           console.error("Failed to get xAI ephemeral token:", error);

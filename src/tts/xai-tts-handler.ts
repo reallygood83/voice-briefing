@@ -65,6 +65,7 @@ export class XaiTTSHandler {
 			if (data.key) return data.key;
 			if (data.access_token) return data.access_token;
 			if (data.ephemeral_key) return data.ephemeral_key;
+			if (data.value) return data.value; // Handle format: { "value": "token", "expires_at": ... }
 
 			// If no token found, throw with detailed info
 			throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(', ')}`);
