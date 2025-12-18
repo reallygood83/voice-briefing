@@ -5190,57 +5190,62 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       await this.plugin.saveSettings();
       this.display();
     }));
-    if (this.plugin.settings.aiProvider === "gemini") {
-      new import_obsidian7.Setting(containerEl).setName("Gemini API Key").setDesc("Enter your Google Gemini API key").addText((text) => {
-        text.setPlaceholder("AI...").setValue(this.plugin.settings.geminiApiKey).onChange(async (value) => {
-          this.plugin.settings.geminiApiKey = value;
-          await this.plugin.saveSettings();
-        });
-        text.inputEl.type = "password";
-        return text;
+    const aiApiInfo = containerEl.createDiv("voice-briefing-info");
+    aiApiInfo.createEl("p", {
+      text: "\u{1F4A1} Configure all API keys here. Switch between providers anytime using the dropdown above.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u{1F916} Gemini API Key").setDesc("Google Gemini API key (also used for Gemini TTS)").addText((text) => {
+      text.setPlaceholder("AI...").setValue(this.plugin.settings.geminiApiKey).onChange(async (value) => {
+        this.plugin.settings.geminiApiKey = value;
+        await this.plugin.saveSettings();
       });
+      text.inputEl.type = "password";
+      return text;
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u{1F680} xAI API Key").setDesc("xAI (Grok) API key (also used for xAI TTS)").addText((text) => {
+      text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
+        this.plugin.settings.xaiApiKey = value;
+        await this.plugin.saveSettings();
+      });
+      text.inputEl.type = "password";
+      return text;
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u{1F7E2} OpenAI API Key").setDesc("OpenAI API key for GPT models").addText((text) => {
+      text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
+        this.plugin.settings.openaiApiKey = value;
+        await this.plugin.saveSettings();
+      });
+      text.inputEl.type = "password";
+      return text;
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u{1F7E3} Anthropic API Key").setDesc("Anthropic API key for Claude models").addText((text) => {
+      text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.anthropicApiKey).onChange(async (value) => {
+        this.plugin.settings.anthropicApiKey = value;
+        await this.plugin.saveSettings();
+      });
+      text.inputEl.type = "password";
+      return text;
+    });
+    if (this.plugin.settings.aiProvider === "gemini") {
       new import_obsidian7.Setting(containerEl).setName("Gemini Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gemini-2.0-flash").setValue(this.plugin.settings.geminiModel).onChange(async (value) => {
         this.plugin.settings.geminiModel = value || "gemini-2.0-flash";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "xai") {
-      new import_obsidian7.Setting(containerEl).setName("XAI API Key").setDesc("Enter your XAI (Grok) API key").addText((text) => {
-        text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
-          this.plugin.settings.xaiApiKey = value;
-          await this.plugin.saveSettings();
-        });
-        text.inputEl.type = "password";
-        return text;
-      });
-      new import_obsidian7.Setting(containerEl).setName("XAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("grok-4-1-fast").setValue(this.plugin.settings.xaiModel).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("xAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("grok-4-1-fast").setValue(this.plugin.settings.xaiModel).onChange(async (value) => {
         this.plugin.settings.xaiModel = value || "grok-4-1-fast";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "openai") {
-      new import_obsidian7.Setting(containerEl).setName("OpenAI API Key").setDesc("Enter your OpenAI API key").addText((text) => {
-        text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
-          this.plugin.settings.openaiApiKey = value;
-          await this.plugin.saveSettings();
-        });
-        text.inputEl.type = "password";
-        return text;
-      });
       new import_obsidian7.Setting(containerEl).setName("OpenAI Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("gpt-4o").setValue(this.plugin.settings.openaiModel).onChange(async (value) => {
         this.plugin.settings.openaiModel = value || "gpt-4o";
         await this.plugin.saveSettings();
       }));
     }
     if (this.plugin.settings.aiProvider === "anthropic") {
-      new import_obsidian7.Setting(containerEl).setName("Anthropic API Key").setDesc("Enter your Anthropic API key").addText((text) => {
-        text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.anthropicApiKey).onChange(async (value) => {
-          this.plugin.settings.anthropicApiKey = value;
-          await this.plugin.saveSettings();
-        });
-        text.inputEl.type = "password";
-        return text;
-      });
       new import_obsidian7.Setting(containerEl).setName("Anthropic Model").setDesc("Model to use for script generation").addText((text) => text.setPlaceholder("claude-3-5-sonnet-20241022").setValue(this.plugin.settings.anthropicModel).onChange(async (value) => {
         this.plugin.settings.anthropicModel = value || "claude-3-5-sonnet-20241022";
         await this.plugin.saveSettings();
@@ -5252,13 +5257,21 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       await this.plugin.saveSettings();
       this.display();
     }));
-    if (this.plugin.settings.ttsEngine === "gemini") {
-      const geminiInfo = containerEl.createDiv("voice-briefing-info");
-      geminiInfo.createEl("p", {
-        text: "\u{1F4A1} Gemini TTS uses the same API key as Gemini AI Provider. 30 voice options available with auto language detection.",
-        cls: "setting-item-description"
+    const ttsApiInfo = containerEl.createDiv("voice-briefing-info");
+    ttsApiInfo.createEl("p", {
+      text: "\u{1F4A1} Gemini TTS & xAI TTS use the same API keys from AI Provider Settings above. Configure ElevenLabs API key below.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u{1F7E3} ElevenLabs API Key").setDesc("Enter your ElevenLabs API key for premium TTS").addText((text) => {
+      text.setPlaceholder("your-api-key").setValue(this.plugin.settings.elevenLabsApiKey).onChange(async (value) => {
+        this.plugin.settings.elevenLabsApiKey = value;
+        await this.plugin.saveSettings();
       });
-      new import_obsidian7.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender)").addDropdown((dropdown) => {
+      text.inputEl.type = "password";
+      return text;
+    });
+    if (this.plugin.settings.ttsEngine === "gemini") {
+      new import_obsidian7.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender) - 30 voice options").addDropdown((dropdown) => {
         const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
         const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");
         const femaleGroup = dropdown.selectEl.createEl("optgroup", { attr: { label: "\u{1F469} Female Voices" } });
@@ -5297,22 +5310,9 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       });
     }
     if (this.plugin.settings.ttsEngine === "xai") {
-      const xaiInfo = containerEl.createDiv("voice-briefing-info");
-      xaiInfo.createEl("p", {
-        text: "\u{1F680} xAI Grok TTS uses WebSocket Realtime API for high-quality voice synthesis. Get your API key from console.x.ai",
-        cls: "setting-item-description"
-      });
-      new import_obsidian7.Setting(containerEl).setName("xAI API Key").setDesc("Enter your xAI API key for TTS (same key used for AI generation if using xAI)").addText((text) => {
-        text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
-          this.plugin.settings.xaiApiKey = value;
-          await this.plugin.saveSettings();
-        });
-        text.inputEl.type = "password";
-        return text;
-      });
-      new import_obsidian7.Setting(containerEl).setName("Test xAI Connection").setDesc("Verify your xAI API key is valid").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
+      new import_obsidian7.Setting(containerEl).setName("Test xAI Connection").setDesc("Verify your xAI API key is valid for TTS").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
         if (!this.plugin.settings.xaiApiKey) {
-          new import_obsidian7.Notice("\u274C Please enter your xAI API key first");
+          new import_obsidian7.Notice("\u274C Please enter your xAI API key in AI Provider Settings first");
           return;
         }
         try {
@@ -5357,7 +5357,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       });
     }
     if (this.plugin.settings.ttsEngine === "edge") {
-      new import_obsidian7.Setting(containerEl).setName("Default Edge Voice").setDesc("Select Edge TTS voice").addDropdown((dropdown) => {
+      new import_obsidian7.Setting(containerEl).setName("Default Edge Voice").setDesc("Select Edge TTS voice (Free)").addDropdown((dropdown) => {
         this.addEdgeVoiceOptions(dropdown);
         return dropdown.setValue(this.plugin.settings.edgeVoice).onChange(async (value) => {
           this.plugin.settings.edgeVoice = value;
@@ -5366,11 +5366,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       });
     }
     if (this.plugin.settings.ttsEngine === "elevenlabs") {
-      new import_obsidian7.Setting(containerEl).setName("ElevenLabs API Key").setDesc("Enter your ElevenLabs API key").addText((text) => text.setPlaceholder("your-api-key").setValue(this.plugin.settings.elevenLabsApiKey).onChange(async (value) => {
-        this.plugin.settings.elevenLabsApiKey = value;
-        await this.plugin.saveSettings();
-      }).inputEl.type = "password");
-      new import_obsidian7.Setting(containerEl).setName("Voice ID").setDesc("ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
+      new import_obsidian7.Setting(containerEl).setName("ElevenLabs Voice ID").setDesc("Enter your ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
         this.plugin.settings.elevenLabsVoiceId = value;
         await this.plugin.saveSettings();
       }));

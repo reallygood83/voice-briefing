@@ -1048,22 +1048,75 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					this.display(); // Refresh to show provider-specific settings
 				}));
 
-		// Google Gemini Settings
-		if (this.plugin.settings.aiProvider === 'gemini') {
-			new Setting(containerEl)
-				.setName('Gemini API Key')
-				.setDesc('Enter your Google Gemini API key')
-				.addText(text => {
-					text.setPlaceholder('AI...')
-						.setValue(this.plugin.settings.geminiApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.geminiApiKey = value;
-							await this.plugin.saveSettings();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
+		// ===== All AI Provider API Keys (Always Visible) =====
+		const aiApiInfo = containerEl.createDiv('voice-briefing-info');
+		aiApiInfo.createEl('p', {
+			text: '💡 Configure all API keys here. Switch between providers anytime using the dropdown above.',
+			cls: 'setting-item-description'
+		});
 
+		// Google Gemini API Key (Always Visible)
+		new Setting(containerEl)
+			.setName('🤖 Gemini API Key')
+			.setDesc('Google Gemini API key (also used for Gemini TTS)')
+			.addText(text => {
+				text.setPlaceholder('AI...')
+					.setValue(this.plugin.settings.geminiApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.geminiApiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				return text;
+			});
+
+		// XAI (Grok) API Key (Always Visible)
+		new Setting(containerEl)
+			.setName('🚀 xAI API Key')
+			.setDesc('xAI (Grok) API key (also used for xAI TTS)')
+			.addText(text => {
+				text.setPlaceholder('xai-...')
+					.setValue(this.plugin.settings.xaiApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.xaiApiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				return text;
+			});
+
+		// OpenAI API Key (Always Visible)
+		new Setting(containerEl)
+			.setName('🟢 OpenAI API Key')
+			.setDesc('OpenAI API key for GPT models')
+			.addText(text => {
+				text.setPlaceholder('sk-...')
+					.setValue(this.plugin.settings.openaiApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.openaiApiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				return text;
+			});
+
+		// Anthropic API Key (Always Visible)
+		new Setting(containerEl)
+			.setName('🟣 Anthropic API Key')
+			.setDesc('Anthropic API key for Claude models')
+			.addText(text => {
+				text.setPlaceholder('sk-ant-...')
+					.setValue(this.plugin.settings.anthropicApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.anthropicApiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				return text;
+			});
+
+		// Model Settings (Conditional based on selected provider)
+		if (this.plugin.settings.aiProvider === 'gemini') {
 			new Setting(containerEl)
 				.setName('Gemini Model')
 				.setDesc('Model to use for script generation')
@@ -1076,24 +1129,9 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					}));
 		}
 
-		// XAI (Grok) Settings
 		if (this.plugin.settings.aiProvider === 'xai') {
 			new Setting(containerEl)
-				.setName('XAI API Key')
-				.setDesc('Enter your XAI (Grok) API key')
-				.addText(text => {
-					text.setPlaceholder('xai-...')
-						.setValue(this.plugin.settings.xaiApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.xaiApiKey = value;
-							await this.plugin.saveSettings();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
-
-			new Setting(containerEl)
-				.setName('XAI Model')
+				.setName('xAI Model')
 				.setDesc('Model to use for script generation')
 				.addText(text => text
 					.setPlaceholder('grok-4-1-fast')
@@ -1104,22 +1142,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					}));
 		}
 
-		// OpenAI Settings
 		if (this.plugin.settings.aiProvider === 'openai') {
-			new Setting(containerEl)
-				.setName('OpenAI API Key')
-				.setDesc('Enter your OpenAI API key')
-				.addText(text => {
-					text.setPlaceholder('sk-...')
-						.setValue(this.plugin.settings.openaiApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.openaiApiKey = value;
-							await this.plugin.saveSettings();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
-
 			new Setting(containerEl)
 				.setName('OpenAI Model')
 				.setDesc('Model to use for script generation')
@@ -1132,22 +1155,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					}));
 		}
 
-		// Anthropic (Claude) Settings
 		if (this.plugin.settings.aiProvider === 'anthropic') {
-			new Setting(containerEl)
-				.setName('Anthropic API Key')
-				.setDesc('Enter your Anthropic API key')
-				.addText(text => {
-					text.setPlaceholder('sk-ant-...')
-						.setValue(this.plugin.settings.anthropicApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.anthropicApiKey = value;
-							await this.plugin.saveSettings();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
-
 			new Setting(containerEl)
 				.setName('Anthropic Model')
 				.setDesc('Model to use for script generation')
@@ -1180,17 +1188,35 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 					this.display(); // Refresh to show relevant settings
 				}));
 
-		// Gemini TTS Settings
-		if (this.plugin.settings.ttsEngine === 'gemini') {
-			const geminiInfo = containerEl.createDiv('voice-briefing-info');
-			geminiInfo.createEl('p', {
-				text: '💡 Gemini TTS uses the same API key as Gemini AI Provider. 30 voice options available with auto language detection.',
-				cls: 'setting-item-description'
+		// ===== TTS API Keys Info =====
+		const ttsApiInfo = containerEl.createDiv('voice-briefing-info');
+		ttsApiInfo.createEl('p', {
+			text: '💡 Gemini TTS & xAI TTS use the same API keys from AI Provider Settings above. Configure ElevenLabs API key below.',
+			cls: 'setting-item-description'
+		});
+
+		// ElevenLabs API Key (Always Visible)
+		new Setting(containerEl)
+			.setName('🟣 ElevenLabs API Key')
+			.setDesc('Enter your ElevenLabs API key for premium TTS')
+			.addText(text => {
+				text.setPlaceholder('your-api-key')
+					.setValue(this.plugin.settings.elevenLabsApiKey)
+					.onChange(async (value) => {
+						this.plugin.settings.elevenLabsApiKey = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.type = 'password';
+				return text;
 			});
 
+		// ===== Voice Settings (Conditional based on selected TTS engine) =====
+
+		// Gemini TTS Voice Settings
+		if (this.plugin.settings.ttsEngine === 'gemini') {
 			new Setting(containerEl)
 				.setName('Default Gemini Voice')
-				.setDesc('Select default voice (grouped by gender)')
+				.setDesc('Select default voice (grouped by gender) - 30 voice options')
 				.addDropdown(dropdown => {
 					// Get voices from Gemini TTS handler
 					const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
@@ -1243,42 +1269,21 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				});
 		}
 
-		// xAI TTS Settings
+		// xAI TTS Voice Settings
 		if (this.plugin.settings.ttsEngine === 'xai') {
-			const xaiInfo = containerEl.createDiv('voice-briefing-info');
-			xaiInfo.createEl('p', {
-				text: '🚀 xAI Grok TTS uses WebSocket Realtime API for high-quality voice synthesis. Get your API key from console.x.ai',
-				cls: 'setting-item-description'
-			});
-
-			new Setting(containerEl)
-				.setName('xAI API Key')
-				.setDesc('Enter your xAI API key for TTS (same key used for AI generation if using xAI)')
-				.addText(text => {
-					text.setPlaceholder('xai-...')
-						.setValue(this.plugin.settings.xaiApiKey)
-						.onChange(async (value) => {
-							this.plugin.settings.xaiApiKey = value;
-							await this.plugin.saveSettings();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
-
 			// Test xAI API Key button
 			new Setting(containerEl)
 				.setName('Test xAI Connection')
-				.setDesc('Verify your xAI API key is valid')
+				.setDesc('Verify your xAI API key is valid for TTS')
 				.addButton(button => button
 					.setButtonText('Test Connection')
 					.onClick(async () => {
 						if (!this.plugin.settings.xaiApiKey) {
-							new Notice('❌ Please enter your xAI API key first');
+							new Notice('❌ Please enter your xAI API key in AI Provider Settings first');
 							return;
 						}
 						try {
 							new Notice('🔄 Testing xAI connection...');
-							// Simple test - we'll try a basic request
 							const response = await requestUrl({
 								url: 'https://api.x.ai/v1/api-key',
 								method: 'GET',
@@ -1295,7 +1300,6 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 							if (error.status === 401) {
 								new Notice('❌ Invalid xAI API key');
 							} else {
-								// API might not have a test endpoint, so if we get other errors, key might be okay
 								new Notice('⚠️ Could not verify key. Try generating audio to test.');
 							}
 						}
@@ -1330,11 +1334,11 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				});
 		}
 
-		// Edge TTS Settings
+		// Edge TTS Voice Settings
 		if (this.plugin.settings.ttsEngine === 'edge') {
 			new Setting(containerEl)
 				.setName('Default Edge Voice')
-				.setDesc('Select Edge TTS voice')
+				.setDesc('Select Edge TTS voice (Free)')
 				.addDropdown(dropdown => {
 					this.addEdgeVoiceOptions(dropdown);
 					return dropdown
@@ -1346,23 +1350,11 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				});
 		}
 
-		// ElevenLabs Settings
+		// ElevenLabs Voice Settings
 		if (this.plugin.settings.ttsEngine === 'elevenlabs') {
 			new Setting(containerEl)
-				.setName('ElevenLabs API Key')
-				.setDesc('Enter your ElevenLabs API key')
-				.addText(text => text
-					.setPlaceholder('your-api-key')
-					.setValue(this.plugin.settings.elevenLabsApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsApiKey = value;
-						await this.plugin.saveSettings();
-					})
-					.inputEl.type = 'password');
-
-			new Setting(containerEl)
-				.setName('Voice ID')
-				.setDesc('ElevenLabs voice ID')
+				.setName('ElevenLabs Voice ID')
+				.setDesc('Enter your ElevenLabs voice ID')
 				.addText(text => text
 					.setPlaceholder('voice-id')
 					.setValue(this.plugin.settings.elevenLabsVoiceId)
