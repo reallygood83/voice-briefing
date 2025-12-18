@@ -30,7 +30,7 @@ export class XaiTTSHandler {
 	// Kept for reference or backward compatibility, but we use direct auth with 'ws' library now
 	private async getEphemeralToken(apiKey: string, voiceName: string): Promise<string> {
 		try {
-			console.log('Fetching xAI ephemeral token...');
+			console.log('[xAI] Fetching ephemeral token...');
 
 			// Try with model and voice configuration in the request body
 			const response = await requestUrl({
@@ -47,30 +47,38 @@ export class XaiTTSHandler {
 			});
 
 			if (response.status !== 200) {
-				console.error('xAI token response status:', response.status);
-				console.error('xAI token response body:', response.text);
+				console.error('[xAI] Token response status:', response.status);
+				console.error('[xAI] Token response body:', response.text);
 				throw new Error(`Failed to get ephemeral token: HTTP ${response.status}`);
 			}
 
 			const data = response.json;
-			console.log('xAI token response received, parsing...');
+			console.log('[xAI] Token response received.');
 			// console.log('xAI token response structure:', JSON.stringify(data, null, 2));
 
+			let token = null;
 			// Try multiple possible response formats
-			if (data.client_secret?.value) return data.client_secret.value;
-			if (typeof data.client_secret === 'string') return data.client_secret;
-			if (data.token) return data.token;
-			if (data.secret) return data.secret;
-			if (data.key) return data.key;
-			if (data.access_token) return data.access_token;
-			if (data.ephemeral_key) return data.ephemeral_key;
-			if (data.value) return data.value; // Handle format: { "value": "token", "expires_at": ... }
+			if (data.client_secret?.value) token = data.client_secret.value;
+			else if (typeof data.client_secret === 'string') token = data.client_secret;
+			else if (data.token) token = data.token;
+			else if (data.secret) token = data.secret;
+			else if (data.key) token = data.key;
+			else if (data.access_token) token = data.access_token;
+			else if (data.ephemeral_key) token = data.ephemeral_key;
+			else if (data.value) token = data.value; // Handle format: { "value": "token", "expires_at": ... }
+
+			if (token) {
+				console.log(`[xAI] Token found (length: ${token.length})`);
+				return token;
+			}
 
 			// If no token found, throw with detailed info
-			throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(', ')}`);
+			const keys = Object.keys(data).join(', ');
+			console.error(`[xAI] Unexpected token response format. Keys: ${keys}`);
+			throw new Error(`Unexpected token response format. Response keys: ${keys}`);
 
 		} catch (error: any) {
-			console.error('Failed to get xAI ephemeral token:', error);
+			console.error('[xAI] Failed to get ephemeral token:', error);
 			if (error.message.includes('401')) {
 				throw new Error('Invalid xAI API key');
 			}
@@ -80,6 +88,7 @@ export class XaiTTSHandler {
 
 	async generate(options: XaiTTSOptions): Promise<void> {
 		const voiceName = options.voiceName || 'Sal';
+		console.log(`[xAI] Starting TTS generation. Voice: ${voiceName}, Text Length: ${options.text.length}`);
 
 		// First, get ephemeral token for authentication
 		const ephemeralToken = await this.getEphemeralToken(options.apiKey, voiceName);
@@ -88,13 +97,12 @@ export class XaiTTSHandler {
 			try {
 				const audioChunks: Buffer[] = [];
 
-				console.log('xAI TTS request:', {
-					voice: voiceName,
-					textLength: options.text.length
-				});
-
 				// Create WebSocket connection using Native Browser API
 				// Authenticate via Query Parameters since headers are not supported in browser
+				// Log URL masked
+				const maskedToken = ephemeralToken.substring(0, 10) + '...';
+				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
+
 				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
 				const ws = new WebSocket(wsUrl);
 
@@ -104,7 +112,7 @@ export class XaiTTSHandler {
 				let conversationCreated = false;
 
 				ws.onopen = () => {
-					console.log('xAI WebSocket connected, authenticating...');
+					console.log('[xAI] WebSocket connected (onopen). Sending auth message...');
 
 					// Send authentication with ephemeral token
 					const authMessage = {
@@ -117,22 +125,27 @@ export class XaiTTSHandler {
 				ws.onmessage = (event: any) => {
 					try {
 						const message = JSON.parse(event.data as string);
-						// console.log('xAI message type:', message.type);
+						// Reduce noise by ignoring chunk events
+						if (message.type !== 'response.audio.delta' && message.type !== 'response.output_audio.delta') {
+							console.log('[xAI] Received message:', message.type, message);
+						}
 
 						switch (message.type) {
 							// Authentication events
 							case 'auth.success':
 							case 'authenticated':
 								authenticated = true;
-								console.log('xAI authenticated, configuring session...');
+								console.log('[xAI] Authenticated successfully. Configuring session...');
 								this.sendSessionConfig(ws, voiceName);
 								break;
 
 							// Conversation created event (sent first according to xAI docs)
 							case 'conversation.created':
 								conversationCreated = true;
+								console.log('[xAI] Conversation created.');
 								if (!authenticated) {
 									authenticated = true; // Assume authenticated if conversation starts
+									console.log('[xAI] Implicitly authenticated via conversation creation.');
 									this.sendSessionConfig(ws, voiceName);
 								}
 								break;
@@ -141,7 +154,7 @@ export class XaiTTSHandler {
 							case 'session.created':
 							case 'session.updated':
 								sessionCreated = true;
-								console.log('xAI session ready, sending text...');
+								console.log('[xAI] Session ready. Sending text input...');
 								this.sendTextInput(ws, options.text);
 								break;
 
@@ -157,13 +170,15 @@ export class XaiTTSHandler {
 
 							case 'response.output_audio.done':
 							case 'response.audio.done':
-								console.log('xAI audio stream completed');
+								console.log('[xAI] Audio stream completed. Total chunks:', audioChunks.length);
 								break;
 
 							case 'response.done':
 								if (audioChunks.length > 0) {
+									console.log('[xAI] Response done with audio. Saving...');
 									this.saveAudio(audioChunks, options.outputPath, ws, resolve, reject);
 								} else if (!responseStarted) {
+									console.warn('[xAI] Response done but NO audio received.');
 									ws.close();
 									reject(new Error('No audio data received from xAI'));
 								}
@@ -173,47 +188,49 @@ export class XaiTTSHandler {
 							case 'error':
 								ws.close();
 								const errorMsg = message.error?.message || message.message || JSON.stringify(message);
-								console.error('xAI error:', errorMsg);
+								console.error('[xAI] Server reported error:', errorMsg);
 								reject(new Error(`xAI error: ${errorMsg}`));
 								break;
 
 							case 'auth.error':
 							case 'auth.failed':
 								ws.close();
+								console.error('[xAI] Authentication failed message received.');
 								reject(new Error('xAI authentication failed. Please check your API key.'));
 								break;
 
 							default:
-								// console.log('xAI unhandled message type:', message.type);
+								console.log('[xAI] Unhandled message type:', message.type);
 								break;
 						}
 					} catch (parseError: any) {
-						console.error('Failed to parse xAI message:', parseError);
+						console.error('[xAI] Failed to parse WebSocket message:', parseError);
 					}
 				};
 
 				ws.onerror = (error: any) => {
-					console.error('xAI WebSocket error:', error);
+					console.error('[xAI] WebSocket network error:', error);
 					reject(new Error('xAI WebSocket connection failed. Please check your network connection.'));
 				};
 
 				ws.onclose = (event: any) => {
-					console.log('xAI WebSocket closed:', event.code, event.reason);
+					console.log(`[xAI] WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
 					if (!sessionCreated && !authenticated && event.code !== 1000) {
-						reject(new Error('xAI WebSocket connection closed unexpectedly. Authentication may have failed.'));
+						reject(new Error(`xAI WebSocket connection closed unexpectedly (Code ${event.code}). Authentication may have failed.`));
 					}
 				};
 
 				// Timeout after 60 seconds
 				setTimeout(() => {
 					if (ws.readyState === WebSocket.OPEN) {
+						console.warn('[xAI] Timed out waiting for completion. Closing socket.');
 						ws.close();
 						reject(new Error('xAI TTS generation timed out'));
 					}
 				}, 60000);
 
 			} catch (error: any) {
-				console.error('xAI TTS error:', error);
+				console.error('[xAI] TTS handling error:', error);
 				reject(new Error(`xAI TTS generation failed: ${error.message}`));
 			}
 		});
@@ -247,7 +264,7 @@ export class XaiTTSHandler {
 				}]
 			}
 		};
-		console.log('Sending text input');
+		console.log('[xAI] Sending text input event...');
 		ws.send(JSON.stringify(inputEvent));
 
 		// Request audio response
@@ -257,7 +274,7 @@ export class XaiTTSHandler {
 				modalities: ['audio']
 			}
 		};
-		console.log('Requesting audio response');
+		console.log('[xAI] Requesting audio response generation...');
 		ws.send(JSON.stringify(responseEvent));
 	}
 
