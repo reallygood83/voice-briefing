@@ -21,18 +21,17 @@ export const XAI_TTS_VOICES = [
 export class XaiTTSHandler {
 	private readonly WS_URL = 'wss://api.x.ai/v1/realtime';
 	private readonly CLIENT_SECRETS_URL = 'https://api.x.ai/v1/realtime/client_secrets';
-	private readonly MODEL = 'grok-2-voice-preview-public';
 
 	/**
 	 * Get ephemeral token for client-side WebSocket connection
 	 * Required for browser/Electron environments that can't set custom headers
+	 * Based on official xAI docs: https://docs.x.ai/docs/guides/voice/agent
 	 */
-	// Kept for reference or backward compatibility, but we use direct auth with 'ws' library now
-	private async getEphemeralToken(apiKey: string, voiceName: string): Promise<string> {
+	private async getEphemeralToken(apiKey: string): Promise<string> {
 		try {
 			console.log('[xAI] Fetching ephemeral token...');
 
-			// Try with model and voice configuration in the request body
+			// Official xAI format: only expires_after is needed
 			const response = await requestUrl({
 				url: this.CLIENT_SECRETS_URL,
 				method: 'POST',
@@ -41,8 +40,7 @@ export class XaiTTSHandler {
 					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
-					model: this.MODEL,
-					voice: voiceName
+					expires_after: { seconds: 300 }
 				})
 			});
 
@@ -53,19 +51,18 @@ export class XaiTTSHandler {
 			}
 
 			const data = response.json;
-			console.log('[xAI] Token response received.');
-			// console.log('xAI token response structure:', JSON.stringify(data, null, 2));
+			console.log('[xAI] Token response received:', JSON.stringify(data, null, 2));
 
 			let token = null;
-			// Try multiple possible response formats
+			// Try multiple possible response formats based on xAI API
 			if (data.client_secret?.value) token = data.client_secret.value;
 			else if (typeof data.client_secret === 'string') token = data.client_secret;
-			else if (data.token) token = data.token;
 			else if (data.secret) token = data.secret;
+			else if (data.token) token = data.token;
 			else if (data.key) token = data.key;
 			else if (data.access_token) token = data.access_token;
 			else if (data.ephemeral_key) token = data.ephemeral_key;
-			else if (data.value) token = data.value; // Handle format: { "value": "token", "expires_at": ... }
+			else if (data.value) token = data.value;
 
 			if (token) {
 				console.log(`[xAI] Token found (length: ${token.length})`);
@@ -91,19 +88,18 @@ export class XaiTTSHandler {
 		console.log(`[xAI] Starting TTS generation. Voice: ${voiceName}, Text Length: ${options.text.length}`);
 
 		// First, get ephemeral token for authentication
-		const ephemeralToken = await this.getEphemeralToken(options.apiKey, voiceName);
+		const ephemeralToken = await this.getEphemeralToken(options.apiKey);
 
 		return new Promise((resolve, reject) => {
 			try {
 				const audioChunks: Buffer[] = [];
 
 				// Create WebSocket connection using Native Browser API
-				// Authenticate via Query Parameters since headers are not supported in browser
-				// Log URL masked
+				// Authenticate via access_token query parameter (ephemeral token method)
 				const maskedToken = ephemeralToken.substring(0, 10) + '...';
-				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
+				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?access_token=${maskedToken}`);
 
-				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
+				const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
 				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
@@ -112,14 +108,10 @@ export class XaiTTSHandler {
 				let conversationCreated = false;
 
 				ws.onopen = () => {
-					console.log('[xAI] WebSocket connected (onopen). Sending auth message...');
-
-					// Send authentication with ephemeral token
-					const authMessage = {
-						type: 'auth',
-						token: ephemeralToken
-					};
-					ws.send(JSON.stringify(authMessage));
+					console.log('[xAI] WebSocket connected (onopen). Configuring session...');
+					// No separate auth message needed - ephemeral token is passed via query param
+					authenticated = true;
+					this.sendSessionConfig(ws, voiceName);
 				};
 
 				ws.onmessage = (event: any) => {
@@ -131,31 +123,18 @@ export class XaiTTSHandler {
 						}
 
 						switch (message.type) {
-							// Authentication events
-							case 'auth.success':
-							case 'authenticated':
-								authenticated = true;
-								console.log('[xAI] Authenticated successfully. Configuring session...');
-								this.sendSessionConfig(ws, voiceName);
-								break;
-
-							// Conversation created event (sent first according to xAI docs)
-							case 'conversation.created':
-								conversationCreated = true;
-								console.log('[xAI] Conversation created.');
-								if (!authenticated) {
-									authenticated = true; // Assume authenticated if conversation starts
-									console.log('[xAI] Implicitly authenticated via conversation creation.');
-									this.sendSessionConfig(ws, voiceName);
-								}
-								break;
-
-							// Session events
+							// Session events - primary flow after WebSocket connection
 							case 'session.created':
 							case 'session.updated':
 								sessionCreated = true;
 								console.log('[xAI] Session ready. Sending text input...');
 								this.sendTextInput(ws, options.text);
+								break;
+
+							// Conversation created event
+							case 'conversation.created':
+								conversationCreated = true;
+								console.log('[xAI] Conversation created.');
 								break;
 
 							// Audio output events (xAI uses response.output_audio.* format)
@@ -237,17 +216,18 @@ export class XaiTTSHandler {
 	}
 
 	private sendSessionConfig(ws: WebSocket, voiceName: string): void {
+		// xAI official session configuration format
 		const sessionConfig = {
 			type: 'session.update',
 			session: {
 				voice: voiceName,
 				instructions: 'You are a text-to-speech assistant. Read the provided text naturally and clearly.',
-				turn_detection: { type: 'server_vad' },
-				input_audio_format: 'pcm16',
+				turn_detection: null, // Disable VAD for TTS-only use
+				modalities: ['audio', 'text'],
 				output_audio_format: 'pcm16'
 			}
 		};
-		// console.log('Sending session config:', sessionConfig);
+		console.log('[xAI] Sending session config:', JSON.stringify(sessionConfig));
 		ws.send(JSON.stringify(sessionConfig));
 	}
 

@@ -244,14 +244,13 @@ var init_xai_tts_handler = __esm({
       constructor() {
         this.WS_URL = "wss://api.x.ai/v1/realtime";
         this.CLIENT_SECRETS_URL = "https://api.x.ai/v1/realtime/client_secrets";
-        this.MODEL = "grok-2-voice-preview-public";
       }
       /**
        * Get ephemeral token for client-side WebSocket connection
        * Required for browser/Electron environments that can't set custom headers
+       * Based on official xAI docs: https://docs.x.ai/docs/guides/voice/agent
        */
-      // Kept for reference or backward compatibility, but we use direct auth with 'ws' library now
-      async getEphemeralToken(apiKey, voiceName) {
+      async getEphemeralToken(apiKey) {
         var _a;
         try {
           console.log("[xAI] Fetching ephemeral token...");
@@ -263,8 +262,7 @@ var init_xai_tts_handler = __esm({
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              model: this.MODEL,
-              voice: voiceName
+              expires_after: { seconds: 300 }
             })
           });
           if (response.status !== 200) {
@@ -273,16 +271,16 @@ var init_xai_tts_handler = __esm({
             throw new Error(`Failed to get ephemeral token: HTTP ${response.status}`);
           }
           const data = response.json;
-          console.log("[xAI] Token response received.");
+          console.log("[xAI] Token response received:", JSON.stringify(data, null, 2));
           let token = null;
           if ((_a = data.client_secret) == null ? void 0 : _a.value)
             token = data.client_secret.value;
           else if (typeof data.client_secret === "string")
             token = data.client_secret;
-          else if (data.token)
-            token = data.token;
           else if (data.secret)
             token = data.secret;
+          else if (data.token)
+            token = data.token;
           else if (data.key)
             token = data.key;
           else if (data.access_token)
@@ -309,25 +307,22 @@ var init_xai_tts_handler = __esm({
       async generate(options) {
         const voiceName = options.voiceName || "Sal";
         console.log(`[xAI] Starting TTS generation. Voice: ${voiceName}, Text Length: ${options.text.length}`);
-        const ephemeralToken = await this.getEphemeralToken(options.apiKey, voiceName);
+        const ephemeralToken = await this.getEphemeralToken(options.apiKey);
         return new Promise((resolve, reject) => {
           try {
             const audioChunks = [];
             const maskedToken = ephemeralToken.substring(0, 10) + "...";
-            console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
-            const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
+            console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?access_token=${maskedToken}`);
+            const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
             const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;
             let authenticated = false;
             let conversationCreated = false;
             ws.onopen = () => {
-              console.log("[xAI] WebSocket connected (onopen). Sending auth message...");
-              const authMessage = {
-                type: "auth",
-                token: ephemeralToken
-              };
-              ws.send(JSON.stringify(authMessage));
+              console.log("[xAI] WebSocket connected (onopen). Configuring session...");
+              authenticated = true;
+              this.sendSessionConfig(ws, voiceName);
             };
             ws.onmessage = (event) => {
               var _a;
@@ -337,26 +332,15 @@ var init_xai_tts_handler = __esm({
                   console.log("[xAI] Received message:", message.type, message);
                 }
                 switch (message.type) {
-                  case "auth.success":
-                  case "authenticated":
-                    authenticated = true;
-                    console.log("[xAI] Authenticated successfully. Configuring session...");
-                    this.sendSessionConfig(ws, voiceName);
-                    break;
-                  case "conversation.created":
-                    conversationCreated = true;
-                    console.log("[xAI] Conversation created.");
-                    if (!authenticated) {
-                      authenticated = true;
-                      console.log("[xAI] Implicitly authenticated via conversation creation.");
-                      this.sendSessionConfig(ws, voiceName);
-                    }
-                    break;
                   case "session.created":
                   case "session.updated":
                     sessionCreated = true;
                     console.log("[xAI] Session ready. Sending text input...");
                     this.sendTextInput(ws, options.text);
+                    break;
+                  case "conversation.created":
+                    conversationCreated = true;
+                    console.log("[xAI] Conversation created.");
                     break;
                   case "response.output_audio.delta":
                   case "response.audio.delta":
@@ -429,11 +413,13 @@ var init_xai_tts_handler = __esm({
           session: {
             voice: voiceName,
             instructions: "You are a text-to-speech assistant. Read the provided text naturally and clearly.",
-            turn_detection: { type: "server_vad" },
-            input_audio_format: "pcm16",
+            turn_detection: null,
+            // Disable VAD for TTS-only use
+            modalities: ["audio", "text"],
             output_audio_format: "pcm16"
           }
         };
+        console.log("[xAI] Sending session config:", JSON.stringify(sessionConfig));
         ws.send(JSON.stringify(sessionConfig));
       }
       sendTextInput(ws, text) {
