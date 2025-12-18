@@ -238,15 +238,54 @@ var init_xai_tts_handler = __esm({
       { name: "Rex", style: "Professional", gender: "M" },
       { name: "Eve", style: "Warm", gender: "F" },
       { name: "Leo", style: "Energetic", gender: "M" },
-      { name: "Ara", style: "Friendly", gender: "F" },
-      { name: "Mika", style: "Casual", gender: "F" },
-      { name: "Valentin", style: "Smooth", gender: "M" }
+      { name: "Ara", style: "Friendly", gender: "F" }
     ];
     XaiTTSHandler = class {
       constructor() {
         this.WS_URL = "wss://api.x.ai/v1/realtime";
+        this.CLIENT_SECRETS_URL = "https://api.x.ai/v1/realtime/client_secrets";
+      }
+      /**
+       * Get ephemeral token for client-side WebSocket connection
+       * Required for browser/Electron environments that can't set custom headers
+       */
+      async getEphemeralToken(apiKey) {
+        try {
+          console.log("Fetching xAI ephemeral token...");
+          const response = await (0, import_obsidian2.requestUrl)({
+            url: this.CLIENT_SECRETS_URL,
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+          });
+          if (response.status !== 200) {
+            console.error("xAI token response:", response.text);
+            throw new Error(`Failed to get ephemeral token: ${response.status}`);
+          }
+          const data = response.json;
+          console.log("xAI ephemeral token obtained successfully");
+          if (data.client_secret) {
+            return data.client_secret.value || data.client_secret;
+          } else if (data.token) {
+            return data.token;
+          } else if (data.secret) {
+            return data.secret;
+          }
+          console.log("xAI token response structure:", JSON.stringify(data, null, 2));
+          throw new Error("Unexpected token response format");
+        } catch (error) {
+          console.error("Failed to get xAI ephemeral token:", error);
+          if (error.message.includes("401")) {
+            throw new Error("Invalid xAI API key");
+          }
+          throw new Error(`Failed to authenticate with xAI: ${error.message}`);
+        }
       }
       async generate(options) {
+        const ephemeralToken = await this.getEphemeralToken(options.apiKey);
         return new Promise((resolve, reject) => {
           try {
             const voiceName = options.voiceName || "Sal";
@@ -255,24 +294,18 @@ var init_xai_tts_handler = __esm({
               voice: voiceName,
               textLength: options.text.length
             });
-            const wsUrl = `${this.WS_URL}?model=grok-2-voice&api_key=${encodeURIComponent(options.apiKey)}`;
+            const wsUrl = `${this.WS_URL}?model=grok-2-voice-preview-public`;
             const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;
+            let authenticated = false;
             ws.onopen = () => {
-              console.log("xAI WebSocket connected");
-              const sessionConfig = {
-                type: "session.update",
-                session: {
-                  modalities: ["audio", "text"],
-                  voice: voiceName.toLowerCase(),
-                  input_audio_format: "pcm16",
-                  output_audio_format: "pcm16",
-                  turn_detection: null
-                  // Disable turn detection for TTS-only
-                }
+              console.log("xAI WebSocket connected, authenticating...");
+              const authMessage = {
+                type: "auth",
+                token: ephemeralToken
               };
-              ws.send(JSON.stringify(sessionConfig));
+              ws.send(JSON.stringify(authMessage));
             };
             ws.onmessage = (event) => {
               var _a;
@@ -280,9 +313,28 @@ var init_xai_tts_handler = __esm({
                 const message = JSON.parse(event.data);
                 console.log("xAI message type:", message.type);
                 switch (message.type) {
+                  case "auth.success":
+                  case "authenticated":
+                    authenticated = true;
+                    console.log("xAI authenticated, configuring session...");
+                    const sessionConfig = {
+                      type: "session.update",
+                      session: {
+                        voice: voiceName,
+                        instructions: "You are a text-to-speech assistant. Read the provided text naturally and clearly.",
+                        turn_detection: { type: "server_vad" },
+                        audio: {
+                          input: { format: { type: "audio/pcm", rate: 24e3 } },
+                          output: { format: { type: "audio/pcm", rate: 24e3 } }
+                        }
+                      }
+                    };
+                    ws.send(JSON.stringify(sessionConfig));
+                    break;
                   case "session.created":
                   case "session.updated":
                     sessionCreated = true;
+                    console.log("xAI session ready, sending text...");
                     const inputEvent = {
                       type: "conversation.item.create",
                       item: {
@@ -335,7 +387,14 @@ var init_xai_tts_handler = __esm({
                     break;
                   case "error":
                     ws.close();
-                    reject(new Error(((_a = message.error) == null ? void 0 : _a.message) || "xAI WebSocket error"));
+                    const errorMsg = ((_a = message.error) == null ? void 0 : _a.message) || message.message || "xAI WebSocket error";
+                    console.error("xAI error:", errorMsg);
+                    reject(new Error(errorMsg));
+                    break;
+                  case "auth.error":
+                  case "auth.failed":
+                    ws.close();
+                    reject(new Error("xAI authentication failed. Please check your API key."));
                     break;
                 }
               } catch (parseError) {
@@ -344,12 +403,12 @@ var init_xai_tts_handler = __esm({
             };
             ws.onerror = (error) => {
               console.error("xAI WebSocket error:", error);
-              reject(new Error("xAI WebSocket connection failed"));
+              reject(new Error("xAI WebSocket connection failed. Please check your network connection."));
             };
             ws.onclose = (event) => {
               console.log("xAI WebSocket closed:", event.code, event.reason);
-              if (!sessionCreated) {
-                reject(new Error("xAI WebSocket connection closed unexpectedly"));
+              if (!sessionCreated && !authenticated) {
+                reject(new Error("xAI WebSocket connection closed unexpectedly. Authentication may have failed."));
               }
             };
             setTimeout(() => {
