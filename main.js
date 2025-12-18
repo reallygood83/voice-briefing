@@ -5247,7 +5247,7 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
       }));
     }
     containerEl.createEl("h2", { text: "\u{1F50A} Text-to-Speech Settings" });
-    new import_obsidian7.Setting(containerEl).setName("Default TTS Engine").setDesc("Choose the default TTS engine (can be changed per-generation in Quick Options)").addDropdown((dropdown) => dropdown.addOption("gemini", "\u{1F916} Gemini TTS (Recommended)").addOption("edge", "\u{1F537} Edge TTS (Free)").addOption("elevenlabs", "\u{1F7E3} ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
+    new import_obsidian7.Setting(containerEl).setName("Default TTS Engine").setDesc("Choose the default TTS engine (can be changed per-generation in Quick Options)").addDropdown((dropdown) => dropdown.addOption("gemini", "\u{1F916} Gemini TTS (Recommended)").addOption("xai", "\u{1F680} xAI Grok TTS (Premium)").addOption("edge", "\u{1F537} Edge TTS (Free)").addOption("elevenlabs", "\u{1F7E3} ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
       this.plugin.settings.ttsEngine = value;
       await this.plugin.saveSettings();
       this.display();
@@ -5299,10 +5299,45 @@ var VoiceBriefingSettingTab = class extends import_obsidian7.PluginSettingTab {
     if (this.plugin.settings.ttsEngine === "xai") {
       const xaiInfo = containerEl.createDiv("voice-briefing-info");
       xaiInfo.createEl("p", {
-        text: "\u{1F916} xAI TTS uses the same API key configured above in AI Settings.",
+        text: "\u{1F680} xAI Grok TTS uses WebSocket Realtime API for high-quality voice synthesis. Get your API key from console.x.ai",
         cls: "setting-item-description"
       });
-      new import_obsidian7.Setting(containerEl).setName("Default xAI Voice").setDesc("Select the default voice for xAI TTS").addDropdown((dropdown) => {
+      new import_obsidian7.Setting(containerEl).setName("xAI API Key").setDesc("Enter your xAI API key for TTS (same key used for AI generation if using xAI)").addText((text) => {
+        text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
+          this.plugin.settings.xaiApiKey = value;
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.type = "password";
+        return text;
+      });
+      new import_obsidian7.Setting(containerEl).setName("Test xAI Connection").setDesc("Verify your xAI API key is valid").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
+        if (!this.plugin.settings.xaiApiKey) {
+          new import_obsidian7.Notice("\u274C Please enter your xAI API key first");
+          return;
+        }
+        try {
+          new import_obsidian7.Notice("\u{1F504} Testing xAI connection...");
+          const response = await (0, import_obsidian7.requestUrl)({
+            url: "https://api.x.ai/v1/api-key",
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${this.plugin.settings.xaiApiKey}`
+            }
+          });
+          if (response.status === 200) {
+            new import_obsidian7.Notice("\u2705 xAI API key is valid!");
+          } else {
+            new import_obsidian7.Notice("\u274C xAI API key is invalid");
+          }
+        } catch (error) {
+          if (error.status === 401) {
+            new import_obsidian7.Notice("\u274C Invalid xAI API key");
+          } else {
+            new import_obsidian7.Notice("\u26A0\uFE0F Could not verify key. Try generating audio to test.");
+          }
+        }
+      }));
+      new import_obsidian7.Setting(containerEl).setName("Default xAI Voice").setDesc("Select the default voice for xAI TTS (7 premium voices)").addDropdown((dropdown) => {
         const maleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "M");
         const femaleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "F");
         dropdown.addOption("", "\u2500\u2500 Male Voices \u2500\u2500");

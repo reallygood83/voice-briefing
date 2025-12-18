@@ -11,7 +11,7 @@
  * See LICENSE file for full terms.
  */
 
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal, requestUrl } from 'obsidian';
 
 // Progress Modal for showing generation progress
 class ProgressModal extends Modal {
@@ -1170,6 +1170,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 			.setDesc('Choose the default TTS engine (can be changed per-generation in Quick Options)')
 			.addDropdown(dropdown => dropdown
 				.addOption('gemini', '🤖 Gemini TTS (Recommended)')
+				.addOption('xai', '🚀 xAI Grok TTS (Premium)')
 				.addOption('edge', '🔷 Edge TTS (Free)')
 				.addOption('elevenlabs', '🟣 ElevenLabs (Premium)')
 				.setValue(this.plugin.settings.ttsEngine)
@@ -1246,13 +1247,63 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		if (this.plugin.settings.ttsEngine === 'xai') {
 			const xaiInfo = containerEl.createDiv('voice-briefing-info');
 			xaiInfo.createEl('p', {
-				text: '🤖 xAI TTS uses the same API key configured above in AI Settings.',
+				text: '🚀 xAI Grok TTS uses WebSocket Realtime API for high-quality voice synthesis. Get your API key from console.x.ai',
 				cls: 'setting-item-description'
 			});
 
 			new Setting(containerEl)
+				.setName('xAI API Key')
+				.setDesc('Enter your xAI API key for TTS (same key used for AI generation if using xAI)')
+				.addText(text => {
+					text.setPlaceholder('xai-...')
+						.setValue(this.plugin.settings.xaiApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.xaiApiKey = value;
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = 'password';
+					return text;
+				});
+
+			// Test xAI API Key button
+			new Setting(containerEl)
+				.setName('Test xAI Connection')
+				.setDesc('Verify your xAI API key is valid')
+				.addButton(button => button
+					.setButtonText('Test Connection')
+					.onClick(async () => {
+						if (!this.plugin.settings.xaiApiKey) {
+							new Notice('❌ Please enter your xAI API key first');
+							return;
+						}
+						try {
+							new Notice('🔄 Testing xAI connection...');
+							// Simple test - we'll try a basic request
+							const response = await requestUrl({
+								url: 'https://api.x.ai/v1/api-key',
+								method: 'GET',
+								headers: {
+									'Authorization': `Bearer ${this.plugin.settings.xaiApiKey}`
+								}
+							});
+							if (response.status === 200) {
+								new Notice('✅ xAI API key is valid!');
+							} else {
+								new Notice('❌ xAI API key is invalid');
+							}
+						} catch (error: any) {
+							if (error.status === 401) {
+								new Notice('❌ Invalid xAI API key');
+							} else {
+								// API might not have a test endpoint, so if we get other errors, key might be okay
+								new Notice('⚠️ Could not verify key. Try generating audio to test.');
+							}
+						}
+					}));
+
+			new Setting(containerEl)
 				.setName('Default xAI Voice')
-				.setDesc('Select the default voice for xAI TTS')
+				.setDesc('Select the default voice for xAI TTS (7 premium voices)')
 				.addDropdown(dropdown => {
 					// Group voices by gender
 					const maleVoices = XAI_TTS_VOICES.filter(v => v.gender === 'M');
