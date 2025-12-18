@@ -21,15 +21,17 @@ export const XAI_TTS_VOICES = [
 export class XaiTTSHandler {
 	private readonly WS_URL = 'wss://api.x.ai/v1/realtime';
 	private readonly CLIENT_SECRETS_URL = 'https://api.x.ai/v1/realtime/client_secrets';
+	private readonly MODEL = 'grok-2-voice-preview-public';
 
 	/**
 	 * Get ephemeral token for client-side WebSocket connection
 	 * Required for browser/Electron environments that can't set custom headers
 	 */
-	private async getEphemeralToken(apiKey: string): Promise<string> {
+	private async getEphemeralToken(apiKey: string, voiceName: string): Promise<string> {
 		try {
 			console.log('Fetching xAI ephemeral token...');
 
+			// Try with model and voice configuration in the request body
 			const response = await requestUrl({
 				url: this.CLIENT_SECRETS_URL,
 				method: 'POST',
@@ -37,46 +39,99 @@ export class XaiTTSHandler {
 					'Authorization': `Bearer ${apiKey}`,
 					'Content-Type': 'application/json'
 				},
-				body: JSON.stringify({})
+				body: JSON.stringify({
+					model: this.MODEL,
+					voice: voiceName
+				})
 			});
 
 			if (response.status !== 200) {
-				console.error('xAI token response:', response.text);
-				throw new Error(`Failed to get ephemeral token: ${response.status}`);
+				console.error('xAI token response status:', response.status);
+				console.error('xAI token response body:', response.text);
+				throw new Error(`Failed to get ephemeral token: HTTP ${response.status}`);
 			}
 
 			const data = response.json;
-			console.log('xAI ephemeral token obtained successfully');
+			console.log('xAI token response received, parsing...');
+			console.log('xAI token response structure:', JSON.stringify(data, null, 2));
 
-			// The response should contain a client_secret or token field
-			if (data.client_secret) {
-				return data.client_secret.value || data.client_secret;
-			} else if (data.token) {
+			// Try multiple possible response formats
+			// Format 1: { client_secret: { value: "token" } }
+			if (data.client_secret?.value) {
+				console.log('Found token in client_secret.value');
+				return data.client_secret.value;
+			}
+			// Format 2: { client_secret: "token" }
+			if (typeof data.client_secret === 'string') {
+				console.log('Found token in client_secret (string)');
+				return data.client_secret;
+			}
+			// Format 3: { token: "token" }
+			if (data.token) {
+				console.log('Found token in token field');
 				return data.token;
-			} else if (data.secret) {
+			}
+			// Format 4: { secret: "token" }
+			if (data.secret) {
+				console.log('Found token in secret field');
 				return data.secret;
 			}
+			// Format 5: { key: "token" }
+			if (data.key) {
+				console.log('Found token in key field');
+				return data.key;
+			}
+			// Format 6: { access_token: "token" }
+			if (data.access_token) {
+				console.log('Found token in access_token field');
+				return data.access_token;
+			}
+			// Format 7: { ephemeral_key: "token" }
+			if (data.ephemeral_key) {
+				console.log('Found token in ephemeral_key field');
+				return data.ephemeral_key;
+			}
+			// Format 8: Try to find any string value that looks like a token
+			for (const key of Object.keys(data)) {
+				const value = data[key];
+				if (typeof value === 'string' && value.length > 20) {
+					console.log(`Found potential token in ${key} field`);
+					return value;
+				}
+				if (typeof value === 'object' && value !== null) {
+					for (const subKey of Object.keys(value)) {
+						const subValue = value[subKey];
+						if (typeof subValue === 'string' && subValue.length > 20) {
+							console.log(`Found potential token in ${key}.${subKey} field`);
+							return subValue;
+						}
+					}
+				}
+			}
 
-			// If structure is different, log and try to find token
-			console.log('xAI token response structure:', JSON.stringify(data, null, 2));
-			throw new Error('Unexpected token response format');
+			// If no token found, throw with detailed info
+			throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(', ')}`);
 
 		} catch (error: any) {
 			console.error('Failed to get xAI ephemeral token:', error);
 			if (error.message.includes('401')) {
 				throw new Error('Invalid xAI API key');
 			}
+			if (error.message.includes('404')) {
+				throw new Error('xAI ephemeral token endpoint not found. The API may have changed.');
+			}
 			throw new Error(`Failed to authenticate with xAI: ${error.message}`);
 		}
 	}
 
 	async generate(options: XaiTTSOptions): Promise<void> {
+		const voiceName = options.voiceName || 'Sal';
+
 		// First, get ephemeral token for browser authentication
-		const ephemeralToken = await this.getEphemeralToken(options.apiKey);
+		const ephemeralToken = await this.getEphemeralToken(options.apiKey, voiceName);
 
 		return new Promise((resolve, reject) => {
 			try {
-				const voiceName = options.voiceName || 'Sal';
 				const audioChunks: Buffer[] = [];
 
 				console.log('xAI TTS request:', {
@@ -84,14 +139,14 @@ export class XaiTTSHandler {
 					textLength: options.text.length
 				});
 
-				// Create WebSocket connection with ephemeral token
-				// Use the token as a query parameter for browser compatibility
-				const wsUrl = `${this.WS_URL}?model=grok-2-voice-preview-public`;
+				// Create WebSocket connection with model parameter
+				const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
 				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
 				let responseStarted = false;
 				let authenticated = false;
+				let conversationCreated = false;
 
 				ws.onopen = () => {
 					console.log('xAI WebSocket connected, authenticating...');
@@ -107,107 +162,67 @@ export class XaiTTSHandler {
 				ws.onmessage = (event) => {
 					try {
 						const message = JSON.parse(event.data as string);
-						console.log('xAI message type:', message.type);
+						console.log('xAI message type:', message.type, message);
 
 						switch (message.type) {
+							// Authentication events
 							case 'auth.success':
 							case 'authenticated':
 								authenticated = true;
 								console.log('xAI authenticated, configuring session...');
-
-								// Send session configuration after authentication
-								const sessionConfig = {
-									type: 'session.update',
-									session: {
-										voice: voiceName,
-										instructions: 'You are a text-to-speech assistant. Read the provided text naturally and clearly.',
-										turn_detection: { type: 'server_vad' },
-										audio: {
-											input: { format: { type: 'audio/pcm', rate: 24000 } },
-											output: { format: { type: 'audio/pcm', rate: 24000 } }
-										}
-									}
-								};
-								ws.send(JSON.stringify(sessionConfig));
+								this.sendSessionConfig(ws, voiceName);
 								break;
 
+							// Conversation created event (sent first according to xAI docs)
+							case 'conversation.created':
+								conversationCreated = true;
+								console.log('xAI conversation created');
+								// If we haven't authenticated yet, this might mean direct connection works
+								if (!authenticated) {
+									authenticated = true;
+									this.sendSessionConfig(ws, voiceName);
+								}
+								break;
+
+							// Session events
 							case 'session.created':
 							case 'session.updated':
 								sessionCreated = true;
 								console.log('xAI session ready, sending text...');
-
-								// Send text input after session is ready
-								const inputEvent = {
-									type: 'conversation.item.create',
-									item: {
-										type: 'message',
-										role: 'user',
-										content: [{
-											type: 'input_text',
-											text: `Please read the following text aloud: ${options.text}`
-										}]
-									}
-								};
-								ws.send(JSON.stringify(inputEvent));
-
-								// Request audio response
-								const responseEvent = {
-									type: 'response.create',
-									response: {
-										modalities: ['audio']
-									}
-								};
-								ws.send(JSON.stringify(responseEvent));
+								this.sendTextInput(ws, options.text);
 								break;
 
+							// Audio output events (xAI uses response.output_audio.* format)
+							case 'response.output_audio.delta':
 							case 'response.audio.delta':
 								responseStarted = true;
 								if (message.delta) {
-									// Audio data is base64 encoded PCM
 									const audioData = Buffer.from(message.delta, 'base64');
 									audioChunks.push(audioData);
 								}
 								break;
 
+							case 'response.output_audio.done':
 							case 'response.audio.done':
+								console.log('xAI audio stream completed');
+								// Audio stream done, wait for response.done to save
+								break;
+
 							case 'response.done':
 								if (audioChunks.length > 0) {
-									// Combine all audio chunks
-									const pcmBuffer = Buffer.concat(audioChunks);
-
-									// Convert PCM to WAV
-									const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
-
-									// Determine output path
-									let outputPath = options.outputPath;
-									if (outputPath.endsWith('.mp3')) {
-										outputPath = outputPath.replace('.mp3', '.wav');
-									}
-
-									// Save the WAV file
-									writeFile(outputPath, wavBuffer)
-										.then(() => {
-											console.log('xAI TTS audio saved to:', outputPath);
-											new Notice('✅ Audio generated successfully with xAI TTS');
-											ws.close();
-											resolve();
-										})
-										.catch((err) => {
-											ws.close();
-											reject(new Error(`Failed to save audio: ${err.message}`));
-										});
-								} else if (message.type === 'response.done' && !responseStarted) {
-									// Response completed but no audio received
+									this.saveAudio(audioChunks, options.outputPath, ws, resolve, reject);
+								} else if (!responseStarted) {
 									ws.close();
 									reject(new Error('No audio data received from xAI'));
 								}
 								break;
 
+							// Error handling
 							case 'error':
 								ws.close();
-								const errorMsg = message.error?.message || message.message || 'xAI WebSocket error';
+								const errorMsg = message.error?.message || message.message || JSON.stringify(message);
 								console.error('xAI error:', errorMsg);
-								reject(new Error(errorMsg));
+								reject(new Error(`xAI error: ${errorMsg}`));
 								break;
 
 							case 'auth.error':
@@ -215,6 +230,9 @@ export class XaiTTSHandler {
 								ws.close();
 								reject(new Error('xAI authentication failed. Please check your API key.'));
 								break;
+
+							default:
+								console.log('xAI unhandled message type:', message.type);
 						}
 					} catch (parseError: any) {
 						console.error('Failed to parse xAI message:', parseError);
@@ -253,6 +271,82 @@ export class XaiTTSHandler {
 				}
 			}
 		});
+	}
+
+	private sendSessionConfig(ws: WebSocket, voiceName: string): void {
+		const sessionConfig = {
+			type: 'session.update',
+			session: {
+				voice: voiceName,
+				instructions: 'You are a text-to-speech assistant. Read the provided text naturally and clearly.',
+				turn_detection: { type: 'server_vad' },
+				input_audio_format: 'pcm16',
+				output_audio_format: 'pcm16'
+			}
+		};
+		console.log('Sending session config:', sessionConfig);
+		ws.send(JSON.stringify(sessionConfig));
+	}
+
+	private sendTextInput(ws: WebSocket, text: string): void {
+		// Send text input
+		const inputEvent = {
+			type: 'conversation.item.create',
+			item: {
+				type: 'message',
+				role: 'user',
+				content: [{
+					type: 'input_text',
+					text: `Please read the following text aloud: ${text}`
+				}]
+			}
+		};
+		console.log('Sending text input');
+		ws.send(JSON.stringify(inputEvent));
+
+		// Request audio response
+		const responseEvent = {
+			type: 'response.create',
+			response: {
+				modalities: ['audio']
+			}
+		};
+		console.log('Requesting audio response');
+		ws.send(JSON.stringify(responseEvent));
+	}
+
+	private saveAudio(
+		audioChunks: Buffer[],
+		outputPath: string,
+		ws: WebSocket,
+		resolve: () => void,
+		reject: (error: Error) => void
+	): void {
+		// Combine all audio chunks
+		const pcmBuffer = Buffer.concat(audioChunks);
+		console.log('Total audio data received:', pcmBuffer.length, 'bytes');
+
+		// Convert PCM to WAV
+		const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
+
+		// Determine output path
+		let finalPath = outputPath;
+		if (finalPath.endsWith('.mp3')) {
+			finalPath = finalPath.replace('.mp3', '.wav');
+		}
+
+		// Save the WAV file
+		writeFile(finalPath, wavBuffer)
+			.then(() => {
+				console.log('xAI TTS audio saved to:', finalPath);
+				new Notice('✅ Audio generated successfully with xAI TTS');
+				ws.close();
+				resolve();
+			})
+			.catch((err) => {
+				ws.close();
+				reject(new Error(`Failed to save audio: ${err.message}`));
+			});
 	}
 
 	/**

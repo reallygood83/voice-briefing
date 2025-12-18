@@ -244,12 +244,14 @@ var init_xai_tts_handler = __esm({
       constructor() {
         this.WS_URL = "wss://api.x.ai/v1/realtime";
         this.CLIENT_SECRETS_URL = "https://api.x.ai/v1/realtime/client_secrets";
+        this.MODEL = "grok-2-voice-preview-public";
       }
       /**
        * Get ephemeral token for client-side WebSocket connection
        * Required for browser/Electron environments that can't set custom headers
        */
-      async getEphemeralToken(apiKey) {
+      async getEphemeralToken(apiKey, voiceName) {
+        var _a;
         try {
           console.log("Fetching xAI ephemeral token...");
           const response = await (0, import_obsidian2.requestUrl)({
@@ -259,46 +261,91 @@ var init_xai_tts_handler = __esm({
               "Authorization": `Bearer ${apiKey}`,
               "Content-Type": "application/json"
             },
-            body: JSON.stringify({})
+            body: JSON.stringify({
+              model: this.MODEL,
+              voice: voiceName
+            })
           });
           if (response.status !== 200) {
-            console.error("xAI token response:", response.text);
-            throw new Error(`Failed to get ephemeral token: ${response.status}`);
+            console.error("xAI token response status:", response.status);
+            console.error("xAI token response body:", response.text);
+            throw new Error(`Failed to get ephemeral token: HTTP ${response.status}`);
           }
           const data = response.json;
-          console.log("xAI ephemeral token obtained successfully");
-          if (data.client_secret) {
-            return data.client_secret.value || data.client_secret;
-          } else if (data.token) {
+          console.log("xAI token response received, parsing...");
+          console.log("xAI token response structure:", JSON.stringify(data, null, 2));
+          if ((_a = data.client_secret) == null ? void 0 : _a.value) {
+            console.log("Found token in client_secret.value");
+            return data.client_secret.value;
+          }
+          if (typeof data.client_secret === "string") {
+            console.log("Found token in client_secret (string)");
+            return data.client_secret;
+          }
+          if (data.token) {
+            console.log("Found token in token field");
             return data.token;
-          } else if (data.secret) {
+          }
+          if (data.secret) {
+            console.log("Found token in secret field");
             return data.secret;
           }
-          console.log("xAI token response structure:", JSON.stringify(data, null, 2));
-          throw new Error("Unexpected token response format");
+          if (data.key) {
+            console.log("Found token in key field");
+            return data.key;
+          }
+          if (data.access_token) {
+            console.log("Found token in access_token field");
+            return data.access_token;
+          }
+          if (data.ephemeral_key) {
+            console.log("Found token in ephemeral_key field");
+            return data.ephemeral_key;
+          }
+          for (const key of Object.keys(data)) {
+            const value = data[key];
+            if (typeof value === "string" && value.length > 20) {
+              console.log(`Found potential token in ${key} field`);
+              return value;
+            }
+            if (typeof value === "object" && value !== null) {
+              for (const subKey of Object.keys(value)) {
+                const subValue = value[subKey];
+                if (typeof subValue === "string" && subValue.length > 20) {
+                  console.log(`Found potential token in ${key}.${subKey} field`);
+                  return subValue;
+                }
+              }
+            }
+          }
+          throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(", ")}`);
         } catch (error) {
           console.error("Failed to get xAI ephemeral token:", error);
           if (error.message.includes("401")) {
             throw new Error("Invalid xAI API key");
           }
+          if (error.message.includes("404")) {
+            throw new Error("xAI ephemeral token endpoint not found. The API may have changed.");
+          }
           throw new Error(`Failed to authenticate with xAI: ${error.message}`);
         }
       }
       async generate(options) {
-        const ephemeralToken = await this.getEphemeralToken(options.apiKey);
+        const voiceName = options.voiceName || "Sal";
+        const ephemeralToken = await this.getEphemeralToken(options.apiKey, voiceName);
         return new Promise((resolve, reject) => {
           try {
-            const voiceName = options.voiceName || "Sal";
             const audioChunks = [];
             console.log("xAI TTS request:", {
               voice: voiceName,
               textLength: options.text.length
             });
-            const wsUrl = `${this.WS_URL}?model=grok-2-voice-preview-public`;
+            const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
             const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;
             let authenticated = false;
+            let conversationCreated = false;
             ws.onopen = () => {
               console.log("xAI WebSocket connected, authenticating...");
               const authMessage = {
@@ -311,50 +358,29 @@ var init_xai_tts_handler = __esm({
               var _a;
               try {
                 const message = JSON.parse(event.data);
-                console.log("xAI message type:", message.type);
+                console.log("xAI message type:", message.type, message);
                 switch (message.type) {
                   case "auth.success":
                   case "authenticated":
                     authenticated = true;
                     console.log("xAI authenticated, configuring session...");
-                    const sessionConfig = {
-                      type: "session.update",
-                      session: {
-                        voice: voiceName,
-                        instructions: "You are a text-to-speech assistant. Read the provided text naturally and clearly.",
-                        turn_detection: { type: "server_vad" },
-                        audio: {
-                          input: { format: { type: "audio/pcm", rate: 24e3 } },
-                          output: { format: { type: "audio/pcm", rate: 24e3 } }
-                        }
-                      }
-                    };
-                    ws.send(JSON.stringify(sessionConfig));
+                    this.sendSessionConfig(ws, voiceName);
+                    break;
+                  case "conversation.created":
+                    conversationCreated = true;
+                    console.log("xAI conversation created");
+                    if (!authenticated) {
+                      authenticated = true;
+                      this.sendSessionConfig(ws, voiceName);
+                    }
                     break;
                   case "session.created":
                   case "session.updated":
                     sessionCreated = true;
                     console.log("xAI session ready, sending text...");
-                    const inputEvent = {
-                      type: "conversation.item.create",
-                      item: {
-                        type: "message",
-                        role: "user",
-                        content: [{
-                          type: "input_text",
-                          text: `Please read the following text aloud: ${options.text}`
-                        }]
-                      }
-                    };
-                    ws.send(JSON.stringify(inputEvent));
-                    const responseEvent = {
-                      type: "response.create",
-                      response: {
-                        modalities: ["audio"]
-                      }
-                    };
-                    ws.send(JSON.stringify(responseEvent));
+                    this.sendTextInput(ws, options.text);
                     break;
+                  case "response.output_audio.delta":
                   case "response.audio.delta":
                     responseStarted = true;
                     if (message.delta) {
@@ -362,40 +388,31 @@ var init_xai_tts_handler = __esm({
                       audioChunks.push(audioData);
                     }
                     break;
+                  case "response.output_audio.done":
                   case "response.audio.done":
+                    console.log("xAI audio stream completed");
+                    break;
                   case "response.done":
                     if (audioChunks.length > 0) {
-                      const pcmBuffer = Buffer.concat(audioChunks);
-                      const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 16, 1);
-                      let outputPath = options.outputPath;
-                      if (outputPath.endsWith(".mp3")) {
-                        outputPath = outputPath.replace(".mp3", ".wav");
-                      }
-                      (0, import_promises2.writeFile)(outputPath, wavBuffer).then(() => {
-                        console.log("xAI TTS audio saved to:", outputPath);
-                        new import_obsidian2.Notice("\u2705 Audio generated successfully with xAI TTS");
-                        ws.close();
-                        resolve();
-                      }).catch((err) => {
-                        ws.close();
-                        reject(new Error(`Failed to save audio: ${err.message}`));
-                      });
-                    } else if (message.type === "response.done" && !responseStarted) {
+                      this.saveAudio(audioChunks, options.outputPath, ws, resolve, reject);
+                    } else if (!responseStarted) {
                       ws.close();
                       reject(new Error("No audio data received from xAI"));
                     }
                     break;
                   case "error":
                     ws.close();
-                    const errorMsg = ((_a = message.error) == null ? void 0 : _a.message) || message.message || "xAI WebSocket error";
+                    const errorMsg = ((_a = message.error) == null ? void 0 : _a.message) || message.message || JSON.stringify(message);
                     console.error("xAI error:", errorMsg);
-                    reject(new Error(errorMsg));
+                    reject(new Error(`xAI error: ${errorMsg}`));
                     break;
                   case "auth.error":
                   case "auth.failed":
                     ws.close();
                     reject(new Error("xAI authentication failed. Please check your API key."));
                     break;
+                  default:
+                    console.log("xAI unhandled message type:", message.type);
                 }
               } catch (parseError) {
                 console.error("Failed to parse xAI message:", parseError);
@@ -427,6 +444,61 @@ var init_xai_tts_handler = __esm({
               reject(new Error(`xAI TTS generation failed: ${error.message}`));
             }
           }
+        });
+      }
+      sendSessionConfig(ws, voiceName) {
+        const sessionConfig = {
+          type: "session.update",
+          session: {
+            voice: voiceName,
+            instructions: "You are a text-to-speech assistant. Read the provided text naturally and clearly.",
+            turn_detection: { type: "server_vad" },
+            input_audio_format: "pcm16",
+            output_audio_format: "pcm16"
+          }
+        };
+        console.log("Sending session config:", sessionConfig);
+        ws.send(JSON.stringify(sessionConfig));
+      }
+      sendTextInput(ws, text) {
+        const inputEvent = {
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{
+              type: "input_text",
+              text: `Please read the following text aloud: ${text}`
+            }]
+          }
+        };
+        console.log("Sending text input");
+        ws.send(JSON.stringify(inputEvent));
+        const responseEvent = {
+          type: "response.create",
+          response: {
+            modalities: ["audio"]
+          }
+        };
+        console.log("Requesting audio response");
+        ws.send(JSON.stringify(responseEvent));
+      }
+      saveAudio(audioChunks, outputPath, ws, resolve, reject) {
+        const pcmBuffer = Buffer.concat(audioChunks);
+        console.log("Total audio data received:", pcmBuffer.length, "bytes");
+        const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 16, 1);
+        let finalPath = outputPath;
+        if (finalPath.endsWith(".mp3")) {
+          finalPath = finalPath.replace(".mp3", ".wav");
+        }
+        (0, import_promises2.writeFile)(finalPath, wavBuffer).then(() => {
+          console.log("xAI TTS audio saved to:", finalPath);
+          new import_obsidian2.Notice("\u2705 Audio generated successfully with xAI TTS");
+          ws.close();
+          resolve();
+        }).catch((err) => {
+          ws.close();
+          reject(new Error(`Failed to save audio: ${err.message}`));
         });
       }
       /**
