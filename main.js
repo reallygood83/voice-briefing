@@ -12,6 +12,9 @@ var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
 var __export = (target, all3) => {
   for (var name in all3)
     __defProp(target, name, { get: all3[name], enumerable: true });
@@ -227,12 +230,25 @@ var init_gemini_tts_handler = __esm({
   }
 });
 
+// node_modules/ws/browser.js
+var require_browser = __commonJS({
+  "node_modules/ws/browser.js"(exports, module2) {
+    "use strict";
+    module2.exports = function() {
+      throw new Error(
+        "ws does not work in the browser. Browser clients must use the native WebSocket object"
+      );
+    };
+  }
+});
+
 // src/tts/xai-tts-handler.ts
-var import_obsidian2, import_promises2, XAI_TTS_VOICES, XaiTTSHandler;
+var import_obsidian2, import_promises2, import_ws, XAI_TTS_VOICES, XaiTTSHandler;
 var init_xai_tts_handler = __esm({
   "src/tts/xai-tts-handler.ts"() {
     import_obsidian2 = require("obsidian");
     import_promises2 = require("fs/promises");
+    import_ws = __toESM(require_browser());
     XAI_TTS_VOICES = [
       { name: "Sal", style: "Conversational", gender: "M" },
       { name: "Rex", style: "Professional", gender: "M" },
@@ -250,6 +266,7 @@ var init_xai_tts_handler = __esm({
        * Get ephemeral token for client-side WebSocket connection
        * Required for browser/Electron environments that can't set custom headers
        */
+      // Kept for reference or backward compatibility, but we use direct auth with 'ws' library now
       async getEphemeralToken(apiKey, voiceName) {
         var _a;
         try {
@@ -273,59 +290,25 @@ var init_xai_tts_handler = __esm({
           }
           const data = response.json;
           console.log("xAI token response received, parsing...");
-          console.log("xAI token response structure:", JSON.stringify(data, null, 2));
-          if ((_a = data.client_secret) == null ? void 0 : _a.value) {
-            console.log("Found token in client_secret.value");
+          if ((_a = data.client_secret) == null ? void 0 : _a.value)
             return data.client_secret.value;
-          }
-          if (typeof data.client_secret === "string") {
-            console.log("Found token in client_secret (string)");
+          if (typeof data.client_secret === "string")
             return data.client_secret;
-          }
-          if (data.token) {
-            console.log("Found token in token field");
+          if (data.token)
             return data.token;
-          }
-          if (data.secret) {
-            console.log("Found token in secret field");
+          if (data.secret)
             return data.secret;
-          }
-          if (data.key) {
-            console.log("Found token in key field");
+          if (data.key)
             return data.key;
-          }
-          if (data.access_token) {
-            console.log("Found token in access_token field");
+          if (data.access_token)
             return data.access_token;
-          }
-          if (data.ephemeral_key) {
-            console.log("Found token in ephemeral_key field");
+          if (data.ephemeral_key)
             return data.ephemeral_key;
-          }
-          for (const key of Object.keys(data)) {
-            const value = data[key];
-            if (typeof value === "string" && value.length > 20) {
-              console.log(`Found potential token in ${key} field`);
-              return value;
-            }
-            if (typeof value === "object" && value !== null) {
-              for (const subKey of Object.keys(value)) {
-                const subValue = value[subKey];
-                if (typeof subValue === "string" && subValue.length > 20) {
-                  console.log(`Found potential token in ${key}.${subKey} field`);
-                  return subValue;
-                }
-              }
-            }
-          }
           throw new Error(`Unexpected token response format. Response keys: ${Object.keys(data).join(", ")}`);
         } catch (error) {
           console.error("Failed to get xAI ephemeral token:", error);
           if (error.message.includes("401")) {
             throw new Error("Invalid xAI API key");
-          }
-          if (error.message.includes("404")) {
-            throw new Error("xAI ephemeral token endpoint not found. The API may have changed.");
           }
           throw new Error(`Failed to authenticate with xAI: ${error.message}`);
         }
@@ -340,8 +323,12 @@ var init_xai_tts_handler = __esm({
               voice: voiceName,
               textLength: options.text.length
             });
-            const wsUrl = `${this.WS_URL}?access_token=${ephemeralToken}`;
-            const ws = new WebSocket(wsUrl);
+            const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
+            const ws = new import_ws.WebSocket(wsUrl, {
+              headers: {
+                "Authorization": `Bearer ${ephemeralToken}`
+              }
+            });
             let sessionCreated = false;
             let responseStarted = false;
             let authenticated = false;
@@ -358,7 +345,6 @@ var init_xai_tts_handler = __esm({
               var _a;
               try {
                 const message = JSON.parse(event.data);
-                console.log("xAI message type:", message.type, message);
                 switch (message.type) {
                   case "auth.success":
                   case "authenticated":
@@ -368,7 +354,6 @@ var init_xai_tts_handler = __esm({
                     break;
                   case "conversation.created":
                     conversationCreated = true;
-                    console.log("xAI conversation created");
                     if (!authenticated) {
                       authenticated = true;
                       this.sendSessionConfig(ws, voiceName);
@@ -412,7 +397,7 @@ var init_xai_tts_handler = __esm({
                     reject(new Error("xAI authentication failed. Please check your API key."));
                     break;
                   default:
-                    console.log("xAI unhandled message type:", message.type);
+                    break;
                 }
               } catch (parseError) {
                 console.error("Failed to parse xAI message:", parseError);
@@ -424,25 +409,19 @@ var init_xai_tts_handler = __esm({
             };
             ws.onclose = (event) => {
               console.log("xAI WebSocket closed:", event.code, event.reason);
-              if (!sessionCreated && !authenticated) {
+              if (!sessionCreated && !authenticated && event.code !== 1e3) {
                 reject(new Error("xAI WebSocket connection closed unexpectedly. Authentication may have failed."));
               }
             };
             setTimeout(() => {
-              if (ws.readyState === WebSocket.OPEN) {
+              if (ws.readyState === import_ws.WebSocket.OPEN) {
                 ws.close();
                 reject(new Error("xAI TTS generation timed out"));
               }
             }, 6e4);
           } catch (error) {
             console.error("xAI TTS error:", error);
-            if (error.message.includes("401") || error.message.includes("API_KEY")) {
-              reject(new Error("Invalid xAI API key"));
-            } else if (error.message.includes("429")) {
-              reject(new Error("xAI API rate limit exceeded. Please try again later."));
-            } else {
-              reject(new Error(`xAI TTS generation failed: ${error.message}`));
-            }
+            reject(new Error(`xAI TTS generation failed: ${error.message}`));
           }
         });
       }
@@ -457,7 +436,6 @@ var init_xai_tts_handler = __esm({
             output_audio_format: "pcm16"
           }
         };
-        console.log("Sending session config:", sessionConfig);
         ws.send(JSON.stringify(sessionConfig));
       }
       sendTextInput(ws, text) {
