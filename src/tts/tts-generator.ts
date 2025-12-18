@@ -150,27 +150,9 @@ export class TTSGenerator {
 	}
 
 	private async generateWithXaiTTS(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
-		if (!options.xaiApiKey) {
-			throw new Error('xAI API key is required for xAI TTS');
-		}
-
-		// xAI TTS outputs WAV, so we adjust the output path
-		let outputPath = options.outputPath;
-		if (outputPath.endsWith('.mp3')) {
-			outputPath = outputPath.replace('.mp3', '.wav');
-		}
-
-		await this.xaiHandler.generate({
-			apiKey: options.xaiApiKey,
-			text: options.text,
-			outputPath: outputPath,
-			voiceName: options.xaiVoice || 'Sal'
-		});
-
-		return {
-			success: true,
-			audioPath: outputPath
-		};
+		// xAI Realtime API requires WebSocket Authorization header which is not supported in browser/Electron environments
+		new Notice('⚠️ xAI TTS는 현재 옵시디언 환경에서 지원되지 않습니다. Gemini 또는 Edge TTS를 사용해주세요.', 8000);
+		throw new Error('xAI TTS는 현재 옵시디언 환경에서 지원되지 않습니다. (WebSocket Authorization 헤더 제한)');
 	}
 
 	getXaiVoices(): Array<{ name: string; style: string; gender: string }> {
