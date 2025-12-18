@@ -1,6 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
-import WebSocket from 'ws';
 
 export interface XaiTTSOptions {
 	apiKey: string;
@@ -94,14 +93,10 @@ export class XaiTTSHandler {
 					textLength: options.text.length
 				});
 
-				// Create WebSocket connection using Node.js ws library with headers
-				// This bypasses browser limitations on setting WebSocket headers
-				const wsUrl = `${this.WS_URL}?model=${this.MODEL}`;
-				const ws = new WebSocket(wsUrl, {
-					headers: {
-						'Authorization': `Bearer ${ephemeralToken}`
-					}
-				});
+				// Create WebSocket connection using Native Browser API
+				// Authenticate via Query Parameters since headers are not supported in browser
+				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
+				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
 				let responseStarted = false;
