@@ -12,9 +12,6 @@ var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
 var __export = (target, all3) => {
   for (var name in all3)
     __defProp(target, name, { get: all3[name], enumerable: true });
@@ -230,25 +227,13 @@ var init_gemini_tts_handler = __esm({
   }
 });
 
-// node_modules/ws/browser.js
-var require_browser = __commonJS({
-  "node_modules/ws/browser.js"(exports, module2) {
-    "use strict";
-    module2.exports = function() {
-      throw new Error(
-        "ws does not work in the browser. Browser clients must use the native WebSocket object"
-      );
-    };
-  }
-});
-
 // src/tts/xai-tts-handler.ts
 var import_obsidian2, import_promises2, import_ws, XAI_TTS_VOICES, XaiTTSHandler;
 var init_xai_tts_handler = __esm({
   "src/tts/xai-tts-handler.ts"() {
     import_obsidian2 = require("obsidian");
     import_promises2 = require("fs/promises");
-    import_ws = __toESM(require_browser());
+    import_ws = require("ws");
     XAI_TTS_VOICES = [
       { name: "Sal", style: "Conversational", gender: "M" },
       { name: "Rex", style: "Professional", gender: "M" },
