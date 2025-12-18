@@ -255,12 +255,8 @@ var init_xai_tts_handler = __esm({
               voice: voiceName,
               textLength: options.text.length
             });
-            const ws = new WebSocket(`${this.WS_URL}?model=grok-2-voice`, {
-              // @ts-ignore - headers are supported in Node.js WebSocket
-              headers: {
-                "Authorization": `Bearer ${options.apiKey}`
-              }
-            });
+            const wsUrl = `${this.WS_URL}?model=grok-2-voice&api_key=${encodeURIComponent(options.apiKey)}`;
+            const ws = new WebSocket(wsUrl);
             let sessionCreated = false;
             let responseStarted = false;
             ws.onopen = () => {

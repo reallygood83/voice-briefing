@@ -34,13 +34,10 @@ export class XaiTTSHandler {
 					textLength: options.text.length
 				});
 
-				// Create WebSocket connection with authentication
-				const ws = new WebSocket(`${this.WS_URL}?model=grok-2-voice`, {
-					// @ts-ignore - headers are supported in Node.js WebSocket
-					headers: {
-						'Authorization': `Bearer ${options.apiKey}`
-					}
-				});
+				// Create WebSocket connection with API key in URL
+				// Browser WebSocket doesn't support custom headers, so we pass auth via query parameter
+				const wsUrl = `${this.WS_URL}?model=grok-2-voice&api_key=${encodeURIComponent(options.apiKey)}`;
+				const ws = new WebSocket(wsUrl);
 
 				let sessionCreated = false;
 				let responseStarted = false;
