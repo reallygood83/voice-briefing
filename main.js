@@ -77,8 +77,8 @@ var init_gemini_tts_handler = __esm({
       { code: "ko-KR", label: "\u{1F1F0}\u{1F1F7} Korean" },
       { code: "en-US", label: "\u{1F1FA}\u{1F1F8} English (US)" },
       { code: "ja-JP", label: "\u{1F1EF}\u{1F1F5} Japanese" },
-      { code: "zh-CN", label: "\u{1F1E8}\u{1F1F3} Chinese" },
-      { code: "es-US", label: "\u{1F1EA}\u{1F1F8} Spanish" },
+      { code: "cmn-CN", label: "\u{1F1E8}\u{1F1F3} Chinese" },
+      { code: "es-ES", label: "\u{1F1EA}\u{1F1F8} Spanish" },
       { code: "fr-FR", label: "\u{1F1EB}\u{1F1F7} French" },
       { code: "de-DE", label: "\u{1F1E9}\u{1F1EA} German" },
       { code: "hi-IN", label: "\u{1F1EE}\u{1F1F3} Hindi" },
@@ -101,36 +101,33 @@ var init_gemini_tts_handler = __esm({
     ];
     GeminiTTSHandler = class {
       constructor() {
-        this.API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent";
+        this.API_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
+        this.MAX_TEXT_BYTES = 4e3;
       }
       async generate(options) {
-        var _a, _b, _c, _d, _e, _f;
         try {
           const voiceName = options.voiceName || "Kore";
-          const CHUNK_SIZE = 200;
-          const chunks = this.chunkText(options.text, CHUNK_SIZE);
-          console.log(`Gemini TTS: Processing ${chunks.length} chunks for ${options.text.length} chars (Chunk size: ${CHUNK_SIZE})`);
-          const pcmBuffers = [];
+          const languageCode = options.languageCode === "auto" ? "en-US" : options.languageCode || "en-US";
+          const chunks = this.chunkText(options.text, this.MAX_TEXT_BYTES);
+          console.log(`Gemini TTS: Processing ${chunks.length} chunks`);
+          const audioBuffers = [];
           for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             if (!chunk.trim())
               continue;
-            console.log(`Gemini TTS request chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
+            console.log(`Gemini TTS chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
             const requestBody = {
-              contents: [{
-                parts: [{
-                  text: chunk
-                }]
-              }],
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName
-                    }
-                  }
-                }
+              input: {
+                text: chunk
+              },
+              voice: {
+                languageCode,
+                name: voiceName,
+                model_name: "gemini-2.5-flash-tts"
+              },
+              audioConfig: {
+                audioEncoding: "LINEAR16",
+                sampleRateHertz: 24e3
               }
             };
             const response = await (0, import_obsidian.requestUrl)({
@@ -139,34 +136,34 @@ var init_gemini_tts_handler = __esm({
               headers: {
                 "Content-Type": "application/json"
               },
-              body: JSON.stringify(requestBody)
+              body: JSON.stringify(requestBody),
+              throw: false
             });
             if (response.status !== 200) {
-              const errorText = response.text;
-              console.error("Gemini TTS API error:", errorText);
-              throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
+              const errorMessage = this.parseErrorResponse(response);
+              console.error("Gemini TTS API error:", errorMessage);
+              throw new Error(errorMessage);
             }
             const responseData = response.json;
-            const audioData = (_f = (_e = (_d = (_c = (_b = (_a = responseData == null ? void 0 : responseData.candidates) == null ? void 0 : _a[0]) == null ? void 0 : _b.content) == null ? void 0 : _c.parts) == null ? void 0 : _d[0]) == null ? void 0 : _e.inlineData) == null ? void 0 : _f.data;
-            if (!audioData) {
+            const audioContent = responseData == null ? void 0 : responseData.audioContent;
+            if (!audioContent) {
               console.error("Gemini TTS response:", JSON.stringify(responseData, null, 2));
-              throw new Error(`No audio data in Gemini TTS response for chunk ${i + 1}`);
+              throw new Error(`No audio content in response for chunk ${i + 1}`);
             }
-            pcmBuffers.push(Buffer.from(audioData, "base64"));
+            audioBuffers.push(Buffer.from(audioContent, "base64"));
             if (i < chunks.length - 1) {
               await new Promise((resolve) => setTimeout(resolve, 200));
             }
           }
-          if (pcmBuffers.length === 0) {
-            throw new Error("No audio content generated from chunks");
+          if (audioBuffers.length === 0) {
+            throw new Error("No audio content generated");
           }
-          const completePcmBuffer = Buffer.concat(pcmBuffers);
-          const wavBuffer = this.pcmToWav(completePcmBuffer, 24e3, 16, 1);
+          const completeAudio = this.concatenateWavBuffers(audioBuffers);
           let outputPath = options.outputPath;
           if (outputPath.endsWith(".mp3")) {
             outputPath = outputPath.replace(".mp3", ".wav");
           }
-          await (0, import_promises.writeFile)(outputPath, wavBuffer);
+          await (0, import_promises.writeFile)(outputPath, completeAudio);
           console.log("Gemini TTS audio saved to:", outputPath);
           new import_obsidian.Notice("\u2705 Audio generated successfully with Gemini TTS");
         } catch (error) {
@@ -175,35 +172,53 @@ var init_gemini_tts_handler = __esm({
             throw new Error("Invalid Gemini API key");
           }
           if (error.message.includes("429")) {
-            throw new Error("Gemini API rate limit exceeded. Please try again later.");
+            throw new Error("Gemini TTS rate limit exceeded. Please try again later.");
           }
-          if (error.message.includes("quota")) {
-            throw new Error("Gemini API quota exceeded. Please check your usage limits.");
+          if (error.message.includes("403")) {
+            throw new Error("Gemini TTS API access denied. Make sure Cloud Text-to-Speech API is enabled in your GCP project.");
           }
           throw new Error(`Gemini TTS generation failed: ${error.message}`);
         }
       }
-      /**
-       * Split text into chunks respecting sentence boundaries
-       */
-      chunkText(text, maxLength) {
-        if (text.length <= maxLength)
+      parseErrorResponse(response) {
+        var _a, _b;
+        let errorMessage = `Gemini TTS API error (${response.status})`;
+        try {
+          const errorBody = response.json;
+          if ((_a = errorBody == null ? void 0 : errorBody.error) == null ? void 0 : _a.message) {
+            errorMessage = `Gemini TTS: ${errorBody.error.message}`;
+          } else if ((_b = errorBody == null ? void 0 : errorBody.error) == null ? void 0 : _b.status) {
+            errorMessage = `Gemini TTS: ${errorBody.error.status} - ${errorBody.error.message || "Unknown error"}`;
+          }
+          console.error("Gemini TTS error response:", errorBody);
+        } catch (e) {
+          if (response.text) {
+            errorMessage += ` - ${response.text.substring(0, 200)}`;
+          }
+        }
+        return errorMessage;
+      }
+      chunkText(text, maxBytes) {
+        const encoder = new TextEncoder();
+        if (encoder.encode(text).length <= maxBytes)
           return [text];
         const chunks = [];
-        let currentChunk = "";
         const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
+        let currentChunk = "";
         for (const sentence of sentences) {
-          if (currentChunk.length + sentence.length > maxLength) {
-            if (currentChunk.length > 0) {
+          const testChunk = currentChunk + sentence;
+          if (encoder.encode(testChunk).length > maxBytes) {
+            if (currentChunk) {
               chunks.push(currentChunk.trim());
               currentChunk = "";
             }
-            if (sentence.length > maxLength) {
+            if (encoder.encode(sentence).length > maxBytes) {
               let remaining = sentence;
-              while (remaining.length > maxLength) {
-                let splitIndex = remaining.lastIndexOf(" ", maxLength);
-                if (splitIndex === -1)
-                  splitIndex = maxLength;
+              while (encoder.encode(remaining).length > maxBytes) {
+                let splitIndex = Math.floor(remaining.length * maxBytes / encoder.encode(remaining).length);
+                const spaceIndex = remaining.lastIndexOf(" ", splitIndex);
+                if (spaceIndex > 0)
+                  splitIndex = spaceIndex;
                 chunks.push(remaining.substring(0, splitIndex).trim());
                 remaining = remaining.substring(splitIndex).trim();
               }
@@ -212,19 +227,28 @@ var init_gemini_tts_handler = __esm({
               currentChunk = sentence;
             }
           } else {
-            currentChunk += sentence;
+            currentChunk = testChunk;
           }
         }
-        if (currentChunk.trim().length > 0) {
+        if (currentChunk.trim()) {
           chunks.push(currentChunk.trim());
         }
         return chunks;
       }
-      /**
-       * Convert raw PCM data to WAV format
-       * Gemini TTS outputs: 24kHz, 16-bit, mono PCM
-       */
-      pcmToWav(pcmData, sampleRate, bitsPerSample, channels) {
+      concatenateWavBuffers(buffers) {
+        if (buffers.length === 1)
+          return buffers[0];
+        const pcmChunks = [];
+        for (const buf of buffers) {
+          if (buf.length > 44) {
+            pcmChunks.push(buf.slice(44));
+          }
+        }
+        const totalPcmLength = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const combinedPcm = Buffer.concat(pcmChunks);
+        return this.createWavBuffer(combinedPcm, 24e3, 16, 1);
+      }
+      createWavBuffer(pcmData, sampleRate, bitsPerSample, channels) {
         const byteRate = sampleRate * channels * (bitsPerSample / 8);
         const blockAlign = channels * (bitsPerSample / 8);
         const dataSize = pcmData.length;
@@ -261,15 +285,9 @@ var init_gemini_tts_handler = __esm({
         pcmData.copy(wavBuffer, offset);
         return wavBuffer;
       }
-      /**
-       * Get list of available voices with their styles and gender
-       */
       getVoices() {
         return [...GEMINI_TTS_VOICES];
       }
-      /**
-       * Get list of supported languages
-       */
       getLanguages() {
         return [...GEMINI_TTS_LANGUAGES];
       }
