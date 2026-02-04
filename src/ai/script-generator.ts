@@ -17,42 +17,79 @@ export interface ScriptGenerationResult {
 }
 
 export class ScriptGenerator {
+	private readonly MIN_SCRIPT_LENGTH = 1200;
+	private readonly MAX_RETRIES = 2;
+
 	async generate(options: ScriptGenerationOptions): Promise<ScriptGenerationResult> {
-		const systemPrompt = this.buildSystemPrompt(options.language, options.style, options.customPrompt);
-		const userPrompt = this.buildUserPrompt(options.content, options.language);
+		let script = await this.generateScript(options);
+		let attempts = 1;
 
-		let script: string;
-
-		switch (options.provider) {
-			case 'gemini':
-				script = await this.generateWithGemini(systemPrompt, userPrompt, options.apiKey, options.modelName);
-				break;
-			case 'xai':
-				script = await this.generateWithXAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
-				break;
-			case 'openai':
-				script = await this.generateWithOpenAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
-				break;
-			case 'anthropic':
-				script = await this.generateWithAnthropic(systemPrompt, userPrompt, options.apiKey, options.modelName);
-				break;
-			default:
-				throw new Error(`Unsupported AI provider: ${options.provider}`);
+		while (script.length < this.MIN_SCRIPT_LENGTH && attempts <= this.MAX_RETRIES) {
+			console.log(`Script Generator: Script too short (${script.length} chars), expanding... (attempt ${attempts + 1})`);
+			new Notice(`Expanding script... (attempt ${attempts + 1})`);
+			
+			script = await this.expandScript(script, options);
+			attempts++;
 		}
 
 		const estimatedDuration = this.estimateDuration(script, options.language);
-
-		console.log(`Script Generator: Generated ${script.length} chars, estimated ${estimatedDuration}s`);
+		console.log(`Script Generator: Final script ${script.length} chars, estimated ${estimatedDuration}s`);
 		
-		if (script.length < 1000) {
-			console.warn(`Script Generator: Script is too short (${script.length} chars). Expected 1500+ chars for proper briefing.`);
-			new Notice(`Warning: Generated script is short (${script.length} chars). Audio may be brief.`);
+		if (script.length < this.MIN_SCRIPT_LENGTH) {
+			console.warn(`Script Generator: Script still short after ${attempts} attempts (${script.length} chars)`);
+			new Notice(`Warning: Script is ${script.length} chars. Audio may be brief.`);
 		}
 
-		return {
-			script,
-			estimatedDuration
-		};
+		return { script, estimatedDuration };
+	}
+
+	private async generateScript(options: ScriptGenerationOptions): Promise<string> {
+		const systemPrompt = this.buildSystemPrompt(options.language, options.style, options.customPrompt);
+		const userPrompt = this.buildUserPrompt(options.content, options.language);
+
+		switch (options.provider) {
+			case 'gemini':
+				return await this.generateWithGemini(systemPrompt, userPrompt, options.apiKey, options.modelName);
+			case 'xai':
+				return await this.generateWithXAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
+			case 'openai':
+				return await this.generateWithOpenAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
+			case 'anthropic':
+				return await this.generateWithAnthropic(systemPrompt, userPrompt, options.apiKey, options.modelName);
+			default:
+				throw new Error(`Unsupported AI provider: ${options.provider}`);
+		}
+	}
+
+	private async expandScript(shortScript: string, options: ScriptGenerationOptions): Promise<string> {
+		const expandPrompt = `The following script is too short for a proper voice briefing. Please EXPAND it to at least 300 words (1500+ characters) while maintaining the same topic and tone.
+
+CURRENT SHORT SCRIPT (${shortScript.length} chars):
+---
+${shortScript}
+---
+
+EXPANSION REQUIREMENTS:
+- Add more detailed explanations for each point
+- Include relevant examples, analogies, or context
+- Add smooth transitions between ideas
+- Expand the introduction and conclusion
+- The final script must be at least 1500 characters
+
+Write the expanded script now (output ONLY the expanded script, no meta-commentary):`;
+
+		switch (options.provider) {
+			case 'gemini':
+				return await this.generateWithGemini('', expandPrompt, options.apiKey, options.modelName);
+			case 'xai':
+				return await this.generateWithXAI('', expandPrompt, options.apiKey, options.modelName);
+			case 'openai':
+				return await this.generateWithOpenAI('', expandPrompt, options.apiKey, options.modelName);
+			case 'anthropic':
+				return await this.generateWithAnthropic('', expandPrompt, options.apiKey, options.modelName);
+			default:
+				return shortScript;
+		}
 	}
 
 	private buildSystemPrompt(language: string, style: string, customPrompt?: string): string {

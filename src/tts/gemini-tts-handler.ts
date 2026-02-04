@@ -73,7 +73,6 @@ export const GEMINI_TTS_LANGUAGES = [
 
 export class GeminiTTSHandler {
 	private readonly API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-	private readonly CHUNK_SIZE = 500; // ~15-20 seconds of audio per chunk
 
 	async generate(options: GeminiTTSOptions): Promise<void> {
 		try {
@@ -81,74 +80,57 @@ export class GeminiTTSHandler {
 			const modelId = options.modelId || 'gemini-2.5-flash-preview-tts';
 			const apiUrl = `${this.API_BASE}/${modelId}:generateContent`;
 
-			const chunks = this.chunkText(options.text, this.CHUNK_SIZE);
-			const totalChars = options.text.length;
-			console.log(`Gemini TTS: Input text ${totalChars} chars → ${chunks.length} chunks (${this.CHUNK_SIZE} chars/chunk)`);
+			console.log(`Gemini TTS: Input text ${options.text.length} chars`);
 			console.log(`Gemini TTS: Model=${modelId}, Voice=${voiceName}`);
+			console.log(`Gemini TTS: Script preview: "${options.text.substring(0, 100)}..."`);
 
-			const pcmBuffers: Buffer[] = [];
-
-			for (let i = 0; i < chunks.length; i++) {
-				const chunk = chunks[i];
-				if (!chunk.trim()) continue;
-
-				console.log(`Gemini TTS chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
-
-				const requestBody = {
-					contents: [{
-						parts: [{
-							text: chunk
-						}]
-					}],
-					generationConfig: {
-						responseModalities: ['AUDIO'],
-						speechConfig: {
-							voiceConfig: {
-								prebuiltVoiceConfig: {
-									voiceName: voiceName
-								}
+			const requestBody = {
+				contents: [{
+					parts: [{
+						text: options.text
+					}]
+				}],
+				generationConfig: {
+					responseModalities: ['AUDIO'],
+					speechConfig: {
+						voiceConfig: {
+							prebuiltVoiceConfig: {
+								voiceName: voiceName
 							}
 						}
 					}
-				};
-
-				const response = await requestUrl({
-					url: `${apiUrl}?key=${options.apiKey}`,
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify(requestBody),
-					throw: false
-				});
-
-				if (response.status !== 200) {
-					const errorMessage = this.parseErrorResponse(response);
-					console.error('Gemini TTS API error:', errorMessage);
-					throw new Error(errorMessage);
 				}
+			};
 
-				const responseData = response.json;
-				const audioData = responseData?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+			const response = await requestUrl({
+				url: `${apiUrl}?key=${options.apiKey}`,
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(requestBody),
+				throw: false
+			});
 
-				if (!audioData) {
-					console.error('Gemini TTS response:', JSON.stringify(responseData, null, 2));
-					throw new Error(`No audio data in response for chunk ${i + 1}`);
-				}
-
-				pcmBuffers.push(Buffer.from(audioData, 'base64'));
-
-				if (i < chunks.length - 1) {
-					await new Promise(resolve => setTimeout(resolve, 200));
-				}
+			if (response.status !== 200) {
+				const errorMessage = this.parseErrorResponse(response);
+				console.error('Gemini TTS API error:', errorMessage);
+				throw new Error(errorMessage);
 			}
 
-			if (pcmBuffers.length === 0) {
-				throw new Error('No audio content generated');
+			const responseData = response.json;
+			const audioData = responseData?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+			if (!audioData) {
+				console.error('Gemini TTS response:', JSON.stringify(responseData, null, 2));
+				throw new Error('No audio data in response');
 			}
 
-			const completePcmBuffer = Buffer.concat(pcmBuffers);
-			const wavBuffer = this.pcmToWav(completePcmBuffer, 24000, 16, 1);
+			const pcmBuffer = Buffer.from(audioData, 'base64');
+			const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
+			
+			const audioDurationSec = Math.round(pcmBuffer.length / (24000 * 2));
+			console.log(`Gemini TTS: Generated ${pcmBuffer.length} bytes PCM (~${audioDurationSec}s audio)`);
 
 			let outputPath = options.outputPath;
 			if (outputPath.endsWith('.mp3')) {
@@ -156,8 +138,8 @@ export class GeminiTTSHandler {
 			}
 
 			await writeFile(outputPath, wavBuffer);
-			console.log('Gemini TTS audio saved to:', outputPath);
-			new Notice('✅ Audio generated successfully with Gemini TTS');
+			console.log(`Gemini TTS: Saved ${wavBuffer.length} bytes WAV to ${outputPath}`);
+			new Notice(`✅ Audio generated (~${audioDurationSec}s)`);
 		} catch (error: any) {
 			console.error('Gemini TTS error:', error);
 
@@ -191,46 +173,6 @@ export class GeminiTTSHandler {
 		}
 
 		return errorMessage;
-	}
-
-	private chunkText(text: string, maxLength: number): string[] {
-		if (text.length <= maxLength) return [text];
-
-		const chunks: string[] = [];
-		let currentChunk = '';
-
-		const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
-
-		for (const sentence of sentences) {
-			if (currentChunk.length + sentence.length > maxLength) {
-				if (currentChunk.length > 0) {
-					chunks.push(currentChunk.trim());
-					currentChunk = '';
-				}
-
-				if (sentence.length > maxLength) {
-					let remaining = sentence;
-					while (remaining.length > maxLength) {
-						let splitIndex = remaining.lastIndexOf(' ', maxLength);
-						if (splitIndex === -1) splitIndex = maxLength;
-
-						chunks.push(remaining.substring(0, splitIndex).trim());
-						remaining = remaining.substring(splitIndex).trim();
-					}
-					currentChunk = remaining;
-				} else {
-					currentChunk = sentence;
-				}
-			} else {
-				currentChunk += sentence;
-			}
-		}
-
-		if (currentChunk.trim().length > 0) {
-			chunks.push(currentChunk.trim());
-		}
-
-		return chunks;
 	}
 
 	private pcmToWav(pcmData: Buffer, sampleRate: number, bitsPerSample: number, channels: number): Buffer {

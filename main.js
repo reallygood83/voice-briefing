@@ -102,79 +102,64 @@ var init_gemini_tts_handler = __esm({
     GeminiTTSHandler = class {
       constructor() {
         this.API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-        this.CHUNK_SIZE = 500;
       }
-      // ~15-20 seconds of audio per chunk
       async generate(options) {
         var _a, _b, _c, _d, _e, _f;
         try {
           const voiceName = options.voiceName || "Kore";
           const modelId = options.modelId || "gemini-2.5-flash-preview-tts";
           const apiUrl = `${this.API_BASE}/${modelId}:generateContent`;
-          const chunks = this.chunkText(options.text, this.CHUNK_SIZE);
-          const totalChars = options.text.length;
-          console.log(`Gemini TTS: Input text ${totalChars} chars \u2192 ${chunks.length} chunks (${this.CHUNK_SIZE} chars/chunk)`);
+          console.log(`Gemini TTS: Input text ${options.text.length} chars`);
           console.log(`Gemini TTS: Model=${modelId}, Voice=${voiceName}`);
-          const pcmBuffers = [];
-          for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            if (!chunk.trim())
-              continue;
-            console.log(`Gemini TTS chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
-            const requestBody = {
-              contents: [{
-                parts: [{
-                  text: chunk
-                }]
-              }],
-              generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName
-                    }
+          console.log(`Gemini TTS: Script preview: "${options.text.substring(0, 100)}..."`);
+          const requestBody = {
+            contents: [{
+              parts: [{
+                text: options.text
+              }]
+            }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName
                   }
                 }
               }
-            };
-            const response = await (0, import_obsidian.requestUrl)({
-              url: `${apiUrl}?key=${options.apiKey}`,
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(requestBody),
-              throw: false
-            });
-            if (response.status !== 200) {
-              const errorMessage = this.parseErrorResponse(response);
-              console.error("Gemini TTS API error:", errorMessage);
-              throw new Error(errorMessage);
             }
-            const responseData = response.json;
-            const audioData = (_f = (_e = (_d = (_c = (_b = (_a = responseData == null ? void 0 : responseData.candidates) == null ? void 0 : _a[0]) == null ? void 0 : _b.content) == null ? void 0 : _c.parts) == null ? void 0 : _d[0]) == null ? void 0 : _e.inlineData) == null ? void 0 : _f.data;
-            if (!audioData) {
-              console.error("Gemini TTS response:", JSON.stringify(responseData, null, 2));
-              throw new Error(`No audio data in response for chunk ${i + 1}`);
-            }
-            pcmBuffers.push(Buffer.from(audioData, "base64"));
-            if (i < chunks.length - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 200));
-            }
+          };
+          const response = await (0, import_obsidian.requestUrl)({
+            url: `${apiUrl}?key=${options.apiKey}`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(requestBody),
+            throw: false
+          });
+          if (response.status !== 200) {
+            const errorMessage = this.parseErrorResponse(response);
+            console.error("Gemini TTS API error:", errorMessage);
+            throw new Error(errorMessage);
           }
-          if (pcmBuffers.length === 0) {
-            throw new Error("No audio content generated");
+          const responseData = response.json;
+          const audioData = (_f = (_e = (_d = (_c = (_b = (_a = responseData == null ? void 0 : responseData.candidates) == null ? void 0 : _a[0]) == null ? void 0 : _b.content) == null ? void 0 : _c.parts) == null ? void 0 : _d[0]) == null ? void 0 : _e.inlineData) == null ? void 0 : _f.data;
+          if (!audioData) {
+            console.error("Gemini TTS response:", JSON.stringify(responseData, null, 2));
+            throw new Error("No audio data in response");
           }
-          const completePcmBuffer = Buffer.concat(pcmBuffers);
-          const wavBuffer = this.pcmToWav(completePcmBuffer, 24e3, 16, 1);
+          const pcmBuffer = Buffer.from(audioData, "base64");
+          const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 16, 1);
+          const audioDurationSec = Math.round(pcmBuffer.length / (24e3 * 2));
+          console.log(`Gemini TTS: Generated ${pcmBuffer.length} bytes PCM (~${audioDurationSec}s audio)`);
           let outputPath = options.outputPath;
           if (outputPath.endsWith(".mp3")) {
             outputPath = outputPath.replace(".mp3", ".wav");
           }
           await (0, import_promises.writeFile)(outputPath, wavBuffer);
-          console.log("Gemini TTS audio saved to:", outputPath);
-          new import_obsidian.Notice("\u2705 Audio generated successfully with Gemini TTS");
+          console.log(`Gemini TTS: Saved ${wavBuffer.length} bytes WAV to ${outputPath}`);
+          new import_obsidian.Notice(`\u2705 Audio generated (~${audioDurationSec}s)`);
         } catch (error) {
           console.error("Gemini TTS error:", error);
           if (error.message.includes("401") || error.message.includes("API_KEY")) {
@@ -203,40 +188,6 @@ var init_gemini_tts_handler = __esm({
           }
         }
         return errorMessage;
-      }
-      chunkText(text, maxLength) {
-        if (text.length <= maxLength)
-          return [text];
-        const chunks = [];
-        let currentChunk = "";
-        const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
-        for (const sentence of sentences) {
-          if (currentChunk.length + sentence.length > maxLength) {
-            if (currentChunk.length > 0) {
-              chunks.push(currentChunk.trim());
-              currentChunk = "";
-            }
-            if (sentence.length > maxLength) {
-              let remaining = sentence;
-              while (remaining.length > maxLength) {
-                let splitIndex = remaining.lastIndexOf(" ", maxLength);
-                if (splitIndex === -1)
-                  splitIndex = maxLength;
-                chunks.push(remaining.substring(0, splitIndex).trim());
-                remaining = remaining.substring(splitIndex).trim();
-              }
-              currentChunk = remaining;
-            } else {
-              currentChunk = sentence;
-            }
-          } else {
-            currentChunk += sentence;
-          }
-        }
-        if (currentChunk.trim().length > 0) {
-          chunks.push(currentChunk.trim());
-        }
-        return chunks;
       }
       pcmToWav(pcmData, sampleRate, bitsPerSample, channels) {
         const byteRate = sampleRate * channels * (bitsPerSample / 8);
@@ -3590,36 +3541,71 @@ var init_script_generator = __esm({
     import_obsidian3 = require("obsidian");
     init_axios2();
     ScriptGenerator = class {
+      constructor() {
+        this.MIN_SCRIPT_LENGTH = 1200;
+        this.MAX_RETRIES = 2;
+      }
       async generate(options) {
+        let script = await this.generateScript(options);
+        let attempts = 1;
+        while (script.length < this.MIN_SCRIPT_LENGTH && attempts <= this.MAX_RETRIES) {
+          console.log(`Script Generator: Script too short (${script.length} chars), expanding... (attempt ${attempts + 1})`);
+          new import_obsidian3.Notice(`Expanding script... (attempt ${attempts + 1})`);
+          script = await this.expandScript(script, options);
+          attempts++;
+        }
+        const estimatedDuration = this.estimateDuration(script, options.language);
+        console.log(`Script Generator: Final script ${script.length} chars, estimated ${estimatedDuration}s`);
+        if (script.length < this.MIN_SCRIPT_LENGTH) {
+          console.warn(`Script Generator: Script still short after ${attempts} attempts (${script.length} chars)`);
+          new import_obsidian3.Notice(`Warning: Script is ${script.length} chars. Audio may be brief.`);
+        }
+        return { script, estimatedDuration };
+      }
+      async generateScript(options) {
         const systemPrompt = this.buildSystemPrompt(options.language, options.style, options.customPrompt);
         const userPrompt = this.buildUserPrompt(options.content, options.language);
-        let script;
         switch (options.provider) {
           case "gemini":
-            script = await this.generateWithGemini(systemPrompt, userPrompt, options.apiKey, options.modelName);
-            break;
+            return await this.generateWithGemini(systemPrompt, userPrompt, options.apiKey, options.modelName);
           case "xai":
-            script = await this.generateWithXAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
-            break;
+            return await this.generateWithXAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
           case "openai":
-            script = await this.generateWithOpenAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
-            break;
+            return await this.generateWithOpenAI(systemPrompt, userPrompt, options.apiKey, options.modelName);
           case "anthropic":
-            script = await this.generateWithAnthropic(systemPrompt, userPrompt, options.apiKey, options.modelName);
-            break;
+            return await this.generateWithAnthropic(systemPrompt, userPrompt, options.apiKey, options.modelName);
           default:
             throw new Error(`Unsupported AI provider: ${options.provider}`);
         }
-        const estimatedDuration = this.estimateDuration(script, options.language);
-        console.log(`Script Generator: Generated ${script.length} chars, estimated ${estimatedDuration}s`);
-        if (script.length < 1e3) {
-          console.warn(`Script Generator: Script is too short (${script.length} chars). Expected 1500+ chars for proper briefing.`);
-          new import_obsidian3.Notice(`Warning: Generated script is short (${script.length} chars). Audio may be brief.`);
+      }
+      async expandScript(shortScript, options) {
+        const expandPrompt = `The following script is too short for a proper voice briefing. Please EXPAND it to at least 300 words (1500+ characters) while maintaining the same topic and tone.
+
+CURRENT SHORT SCRIPT (${shortScript.length} chars):
+---
+${shortScript}
+---
+
+EXPANSION REQUIREMENTS:
+- Add more detailed explanations for each point
+- Include relevant examples, analogies, or context
+- Add smooth transitions between ideas
+- Expand the introduction and conclusion
+- The final script must be at least 1500 characters
+
+Write the expanded script now (output ONLY the expanded script, no meta-commentary):`;
+        switch (options.provider) {
+          case "gemini":
+            return await this.generateWithGemini("", expandPrompt, options.apiKey, options.modelName);
+          case "xai":
+            return await this.generateWithXAI("", expandPrompt, options.apiKey, options.modelName);
+          case "openai":
+            return await this.generateWithOpenAI("", expandPrompt, options.apiKey, options.modelName);
+          case "anthropic":
+            return await this.generateWithAnthropic("", expandPrompt, options.apiKey, options.modelName);
+          default:
+            return shortScript;
         }
-        return {
-          script,
-          estimatedDuration
-        };
       }
       buildSystemPrompt(language, style, customPrompt) {
         const languageInstructions = {
