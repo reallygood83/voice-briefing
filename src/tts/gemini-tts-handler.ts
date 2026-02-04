@@ -73,7 +73,7 @@ export const GEMINI_TTS_LANGUAGES = [
 
 export class GeminiTTSHandler {
 	private readonly API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-	private readonly CHUNK_SIZE = 100;
+	private readonly CHUNK_SIZE = 500; // ~15-20 seconds of audio per chunk
 
 	async generate(options: GeminiTTSOptions): Promise<void> {
 		try {
@@ -82,7 +82,9 @@ export class GeminiTTSHandler {
 			const apiUrl = `${this.API_BASE}/${modelId}:generateContent`;
 
 			const chunks = this.chunkText(options.text, this.CHUNK_SIZE);
-			console.log(`Gemini TTS: Processing ${chunks.length} chunks with model ${modelId}`);
+			const totalChars = options.text.length;
+			console.log(`Gemini TTS: Input text ${totalChars} chars → ${chunks.length} chunks (${this.CHUNK_SIZE} chars/chunk)`);
+			console.log(`Gemini TTS: Model=${modelId}, Voice=${voiceName}`);
 
 			const pcmBuffers: Buffer[] = [];
 

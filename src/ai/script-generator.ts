@@ -42,6 +42,13 @@ export class ScriptGenerator {
 
 		const estimatedDuration = this.estimateDuration(script, options.language);
 
+		console.log(`Script Generator: Generated ${script.length} chars, estimated ${estimatedDuration}s`);
+		
+		if (script.length < 1000) {
+			console.warn(`Script Generator: Script is too short (${script.length} chars). Expected 1500+ chars for proper briefing.`);
+			new Notice(`Warning: Generated script is short (${script.length} chars). Audio may be brief.`);
+		}
+
 		return {
 			script,
 			estimatedDuration
@@ -69,7 +76,8 @@ export class ScriptGenerator {
 			'metaphor': `You are a voice briefing script writer who uses simple, relatable analogies and metaphors to explain concepts.
 Example: "Think of this concept like a traffic system - data flows like cars on roads, with routers acting as traffic lights..."
 
-Write the script ${langInstruction}. Make it engaging and easy to understand for a general audience.`,
+Write the script ${langInstruction}. Make it engaging and easy to understand for a general audience.
+IMPORTANT: Your script MUST be 1500-2500 characters long (about 1.5-2 minutes when spoken aloud).`,
 
 			'feynman': `You are a voice briefing script writer using the Feynman Technique - explain concepts as if teaching someone who knows nothing about the topic.
 Focus on:
@@ -77,26 +85,39 @@ Focus on:
 2. How it works (simple terms)
 3. Key takeaways
 
-Write the script ${langInstruction}. Use simple language and avoid jargon.`,
+Write the script ${langInstruction}. Use simple language and avoid jargon.
+IMPORTANT: Your script MUST be 1500-2500 characters long (about 1.5-2 minutes when spoken aloud).`,
 
 			'anchor': `You are a professional news anchor writing a briefing script. Be:
 - Concise and objective
 - Professional but engaging
 - Clear and authoritative
 
-Write the script ${langInstruction}. Structure it like a news segment (1-2 minutes).`
+Write the script ${langInstruction}. Structure it like a news segment.
+IMPORTANT: Your script MUST be 1500-2500 characters long (about 1.5-2 minutes when spoken aloud).`
 		};
 
 		return stylePrompts[style] || stylePrompts['feynman'];
 	}
 
 	private buildUserPrompt(content: string, language: string): string {
-		const maxLength = 8000; // Prevent token overflow
+		const maxLength = 8000;
 		const truncatedContent = content.length > maxLength
 			? content.substring(0, maxLength) + '\n\n[... content truncated ...]'
 			: content;
 
-		return `Please create a 1-2 minute voice briefing script from the following note content. Extract the key points and make it suitable for audio listening:\n\n${truncatedContent}`;
+		return `Create a voice briefing script from the following note content.
+
+REQUIREMENTS:
+- Length: MUST be 1500-2500 characters (approximately 1.5-2 minutes when spoken)
+- Extract and explain the key points thoroughly
+- Make it conversational and suitable for audio listening
+- Include an engaging introduction and clear conclusion
+
+NOTE CONTENT:
+${truncatedContent}
+
+Remember: The script MUST be at least 1500 characters long. Expand on the key points with context and examples if needed.`;
 	}
 
 	private async generateWithGemini(systemPrompt: string, userPrompt: string, apiKey: string, model: string): Promise<string> {
