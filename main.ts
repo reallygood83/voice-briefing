@@ -569,6 +569,10 @@ interface VoiceBriefingSettings {
 	edgeVoice: string;
 	elevenLabsApiKey: string;
 	elevenLabsVoiceId: string;
+	elevenLabsStability: number;
+	elevenLabsSimilarityBoost: number;
+	elevenLabsStyle: number;
+	elevenLabsSpeakerBoost: boolean;
 
 	// Gemini TTS Settings
 	geminiTtsVoice: string;
@@ -622,6 +626,10 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	edgeVoice: 'ko-KR-SunHiNeural',
 	elevenLabsApiKey: '',
 	elevenLabsVoiceId: '',
+	elevenLabsStability: 0.5,
+	elevenLabsSimilarityBoost: 0.75,
+	elevenLabsStyle: 0.0,
+	elevenLabsSpeakerBoost: true,
 
 	// Gemini TTS defaults
 	geminiTtsVoice: 'Kore',
@@ -775,6 +783,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 				edgeVoice: options.edgeVoice,
 				elevenLabsApiKey: this.settings.elevenLabsApiKey,
 				elevenLabsVoiceId: this.settings.elevenLabsVoiceId,
+				elevenLabsStability: this.settings.elevenLabsStability,
+				elevenLabsSimilarityBoost: this.settings.elevenLabsSimilarityBoost,
+				elevenLabsStyle: this.settings.elevenLabsStyle,
+				elevenLabsSpeakerBoost: this.settings.elevenLabsSpeakerBoost,
 				// Gemini TTS options
 				geminiApiKey: this.settings.geminiApiKey,
 				geminiVoice: options.geminiVoice,
@@ -967,16 +979,16 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 		containerEl.empty();
 
 		// Header
-		containerEl.createEl('h1', {text: 'Voice Briefing Settings'});
+		containerEl.createEl('h1', { text: 'Voice Briefing Settings' });
 
 		// ====================
 		// GENERAL SETTINGS
 		// ====================
-		containerEl.createEl('h2', {text: '🌐 General Settings'});
+		containerEl.createEl('h2', { text: '🌐 General Settings' });
 
 		// Language Setting
 		new Setting(containerEl)
@@ -1031,7 +1043,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		// ====================
 		// AI PROVIDER SETTINGS
 		// ====================
-		containerEl.createEl('h2', {text: '🤖 AI Provider Settings'});
+		containerEl.createEl('h2', { text: '🤖 AI Provider Settings' });
 
 		new Setting(containerEl)
 			.setName('AI Provider')
@@ -1171,7 +1183,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		// ====================
 		// TTS SETTINGS
 		// ====================
-		containerEl.createEl('h2', {text: '🔊 Text-to-Speech Settings'});
+		containerEl.createEl('h2', { text: '🔊 Text-to-Speech Settings' });
 
 		new Setting(containerEl)
 			.setName('Default TTS Engine')
@@ -1362,12 +1374,116 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 						this.plugin.settings.elevenLabsVoiceId = value;
 						await this.plugin.saveSettings();
 					}));
+
+			containerEl.createEl('h3', { text: '🎚️ Voice Characteristics' });
+
+			// Template Selector
+			new Setting(containerEl)
+				.setName('Voice Template')
+				.setDesc('Select a preset to automatically configure settings below')
+				.addDropdown(dropdown => dropdown
+					.addOption('custom', 'Custom / Manual Configuration')
+					.addOption('briefing', '📊 Briefing (Balanced)')
+					.addOption('lecture', '🎓 Lecture (Clear & Stable)')
+					.addOption('news', '📰 News (Formal & Flat)')
+					.addOption('story', '🎭 Storytelling (Expressive)')
+					.addOption('asmr', '🤫 ASMR (Soft & Detailed)')
+					.setValue('custom') // Always show as custom/select state unless tracking template persistence
+					.onChange(async (value) => {
+						if (value === 'custom') return;
+
+						switch (value) {
+							case 'briefing':
+								this.plugin.settings.elevenLabsStability = 0.50;
+								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+								this.plugin.settings.elevenLabsStyle = 0.00;
+								this.plugin.settings.elevenLabsSpeakerBoost = true;
+								break;
+							case 'lecture':
+								this.plugin.settings.elevenLabsStability = 0.75;
+								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+								this.plugin.settings.elevenLabsStyle = 0.00;
+								this.plugin.settings.elevenLabsSpeakerBoost = true;
+								break;
+							case 'news':
+								this.plugin.settings.elevenLabsStability = 0.85;
+								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+								this.plugin.settings.elevenLabsStyle = 0.00;
+								this.plugin.settings.elevenLabsSpeakerBoost = true;
+								break;
+							case 'story':
+								this.plugin.settings.elevenLabsStability = 0.40;
+								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+								this.plugin.settings.elevenLabsStyle = 0.45;
+								this.plugin.settings.elevenLabsSpeakerBoost = true;
+								break;
+							case 'asmr':
+								this.plugin.settings.elevenLabsStability = 0.50;
+								this.plugin.settings.elevenLabsSimilarityBoost = 0.90;
+								this.plugin.settings.elevenLabsStyle = 0.00;
+								this.plugin.settings.elevenLabsSpeakerBoost = false;
+								break;
+						}
+						await this.plugin.saveSettings();
+						this.display(); // Refresh to show new slider values
+						new Notice(`Applied "${value}" template`);
+					}));
+
+			// Stability
+			new Setting(containerEl)
+				.setName('Stability')
+				.setDesc('Higher = more consistent/monotone. Lower = more emotive/random.')
+				.addSlider(slider => slider
+					.setLimits(0.0, 1.0, 0.01)
+					.setValue(this.plugin.settings.elevenLabsStability)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.elevenLabsStability = value;
+						await this.plugin.saveSettings();
+					}));
+
+			// Similarity Boost
+			new Setting(containerEl)
+				.setName('Clarity + Similarity Boost')
+				.setDesc('Higher = closer to original voice but potential artifacts. Lower = clearer but generic.')
+				.addSlider(slider => slider
+					.setLimits(0.0, 1.0, 0.01)
+					.setValue(this.plugin.settings.elevenLabsSimilarityBoost)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.elevenLabsSimilarityBoost = value;
+						await this.plugin.saveSettings();
+					}));
+
+			// Style Exaggeration
+			new Setting(containerEl)
+				.setName('Style Exaggeration')
+				.setDesc('Higher = more exaggerated style. 0 = neutral.')
+				.addSlider(slider => slider
+					.setLimits(0.0, 1.0, 0.01)
+					.setValue(this.plugin.settings.elevenLabsStyle)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.elevenLabsStyle = value;
+						await this.plugin.saveSettings();
+					}));
+
+			// Speaker Boost
+			new Setting(containerEl)
+				.setName('Speaker Boost')
+				.setDesc('Boosts the volume and clarity of the speaker.')
+				.addToggle(toggle => toggle
+					.setValue(this.plugin.settings.elevenLabsSpeakerBoost)
+					.onChange(async (value) => {
+						this.plugin.settings.elevenLabsSpeakerBoost = value;
+						await this.plugin.saveSettings();
+					}));
 		}
 
 		// ====================
 		// CLOUD SHARING SETTINGS
 		// ====================
-		containerEl.createEl('h2', {text: '☁️ Cloud Sharing'});
+		containerEl.createEl('h2', { text: '☁️ Cloud Sharing' });
 
 		new Setting(containerEl)
 			.setName('Enable Cloud Sharing')
@@ -1382,7 +1498,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 
 		if (this.plugin.settings.cloudSharingEnabled) {
 			// Google Cloud Credentials Section
-			containerEl.createEl('h3', {text: '🔑 Google Cloud Credentials'});
+			containerEl.createEl('h3', { text: '🔑 Google Cloud Credentials' });
 
 			const credentialsInfo = containerEl.createDiv('voice-briefing-info');
 			credentialsInfo.createEl('p', {
@@ -1390,12 +1506,12 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				cls: 'setting-item-description'
 			});
 			const steps = credentialsInfo.createEl('ol');
-			steps.createEl('li', {text: 'Go to console.cloud.google.com'});
-			steps.createEl('li', {text: 'Create a new project or select existing'});
-			steps.createEl('li', {text: 'Enable Google Drive API'});
-			steps.createEl('li', {text: 'Create OAuth 2.0 credentials (Desktop app)'});
-			steps.createEl('li', {text: 'Copy Client ID and Client Secret below'});
-			steps.createEl('li', {text: 'Add http://localhost:8585/callback to Authorized redirect URIs'});
+			steps.createEl('li', { text: 'Go to console.cloud.google.com' });
+			steps.createEl('li', { text: 'Create a new project or select existing' });
+			steps.createEl('li', { text: 'Enable Google Drive API' });
+			steps.createEl('li', { text: 'Create OAuth 2.0 credentials (Desktop app)' });
+			steps.createEl('li', { text: 'Copy Client ID and Client Secret below' });
+			steps.createEl('li', { text: 'Add http://localhost:8585/callback to Authorized redirect URIs' });
 
 			new Setting(containerEl)
 				.setName('Client ID')
@@ -1427,7 +1543,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				});
 
 			// Connection Section
-			containerEl.createEl('h3', {text: '🔗 Connection Status'});
+			containerEl.createEl('h3', { text: '🔗 Connection Status' });
 
 			const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
 
@@ -1574,7 +1690,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 			if (this.plugin.settings.googleDriveConnected && this.plugin.settings.googleDriveRefreshToken) {
 				const debugDiv = containerEl.createDiv('voice-briefing-debug');
 				const details = debugDiv.createEl('details');
-				details.createEl('summary', {text: '🔧 Advanced: Token Info'});
+				details.createEl('summary', { text: '🔧 Advanced: Token Info' });
 				const pre = details.createEl('pre');
 				pre.style.fontSize = '11px';
 				pre.style.background = '#f5f5f5';

@@ -107,48 +107,61 @@ var init_gemini_tts_handler = __esm({
         var _a, _b, _c, _d, _e, _f;
         try {
           const voiceName = options.voiceName || "Kore";
-          const requestBody = {
-            contents: [{
-              parts: [{
-                text: options.text
-              }]
-            }],
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName
+          const CHUNK_SIZE = 200;
+          const chunks = this.chunkText(options.text, CHUNK_SIZE);
+          console.log(`Gemini TTS: Processing ${chunks.length} chunks for ${options.text.length} chars (Chunk size: ${CHUNK_SIZE})`);
+          const pcmBuffers = [];
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            if (!chunk.trim())
+              continue;
+            console.log(`Gemini TTS request chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
+            const requestBody = {
+              contents: [{
+                parts: [{
+                  text: chunk
+                }]
+              }],
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName
+                    }
                   }
                 }
               }
+            };
+            const response = await (0, import_obsidian.requestUrl)({
+              url: `${this.API_URL}?key=${options.apiKey}`,
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(requestBody)
+            });
+            if (response.status !== 200) {
+              const errorText = response.text;
+              console.error("Gemini TTS API error:", errorText);
+              throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
             }
-          };
-          console.log("Gemini TTS request:", {
-            voice: voiceName,
-            textLength: options.text.length
-          });
-          const response = await (0, import_obsidian.requestUrl)({
-            url: `${this.API_URL}?key=${options.apiKey}`,
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(requestBody)
-          });
-          if (response.status !== 200) {
-            const errorText = response.text;
-            console.error("Gemini TTS API error:", errorText);
-            throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
+            const responseData = response.json;
+            const audioData = (_f = (_e = (_d = (_c = (_b = (_a = responseData == null ? void 0 : responseData.candidates) == null ? void 0 : _a[0]) == null ? void 0 : _b.content) == null ? void 0 : _c.parts) == null ? void 0 : _d[0]) == null ? void 0 : _e.inlineData) == null ? void 0 : _f.data;
+            if (!audioData) {
+              console.error("Gemini TTS response:", JSON.stringify(responseData, null, 2));
+              throw new Error(`No audio data in Gemini TTS response for chunk ${i + 1}`);
+            }
+            pcmBuffers.push(Buffer.from(audioData, "base64"));
+            if (i < chunks.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
           }
-          const responseData = response.json;
-          const audioData = (_f = (_e = (_d = (_c = (_b = (_a = responseData == null ? void 0 : responseData.candidates) == null ? void 0 : _a[0]) == null ? void 0 : _b.content) == null ? void 0 : _c.parts) == null ? void 0 : _d[0]) == null ? void 0 : _e.inlineData) == null ? void 0 : _f.data;
-          if (!audioData) {
-            console.error("Gemini TTS response:", JSON.stringify(responseData, null, 2));
-            throw new Error("No audio data in Gemini TTS response");
+          if (pcmBuffers.length === 0) {
+            throw new Error("No audio content generated from chunks");
           }
-          const pcmBuffer = Buffer.from(audioData, "base64");
-          const wavBuffer = this.pcmToWav(pcmBuffer, 24e3, 16, 1);
+          const completePcmBuffer = Buffer.concat(pcmBuffers);
+          const wavBuffer = this.pcmToWav(completePcmBuffer, 24e3, 16, 1);
           let outputPath = options.outputPath;
           if (outputPath.endsWith(".mp3")) {
             outputPath = outputPath.replace(".mp3", ".wav");
@@ -169,6 +182,43 @@ var init_gemini_tts_handler = __esm({
           }
           throw new Error(`Gemini TTS generation failed: ${error.message}`);
         }
+      }
+      /**
+       * Split text into chunks respecting sentence boundaries
+       */
+      chunkText(text, maxLength) {
+        if (text.length <= maxLength)
+          return [text];
+        const chunks = [];
+        let currentChunk = "";
+        const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
+        for (const sentence of sentences) {
+          if (currentChunk.length + sentence.length > maxLength) {
+            if (currentChunk.length > 0) {
+              chunks.push(currentChunk.trim());
+              currentChunk = "";
+            }
+            if (sentence.length > maxLength) {
+              let remaining = sentence;
+              while (remaining.length > maxLength) {
+                let splitIndex = remaining.lastIndexOf(" ", maxLength);
+                if (splitIndex === -1)
+                  splitIndex = maxLength;
+                chunks.push(remaining.substring(0, splitIndex).trim());
+                remaining = remaining.substring(splitIndex).trim();
+              }
+              currentChunk = remaining;
+            } else {
+              currentChunk = sentence;
+            }
+          } else {
+            currentChunk += sentence;
+          }
+        }
+        if (currentChunk.trim().length > 0) {
+          chunks.push(currentChunk.trim());
+        }
+        return chunks;
       }
       /**
        * Convert raw PCM data to WAV format
@@ -3812,7 +3862,7 @@ var init_elevenlabs_handler = __esm({
             body: JSON.stringify({
               text: options.text,
               model_id: modelId,
-              voice_settings: {
+              voice_settings: options.voiceSettings || {
                 stability: 0.5,
                 similarity_boost: 0.75,
                 style: 0,
@@ -3948,7 +3998,13 @@ var init_tts_generator = __esm({
           voiceId: options.elevenLabsVoiceId,
           text: options.text,
           outputPath: options.outputPath,
-          modelId: options.elevenLabsModelId
+          modelId: options.elevenLabsModelId,
+          voiceSettings: options.elevenLabsStability !== void 0 ? {
+            stability: options.elevenLabsStability,
+            similarity_boost: options.elevenLabsSimilarityBoost || 0.75,
+            style: options.elevenLabsStyle || 0,
+            use_speaker_boost: options.elevenLabsSpeakerBoost !== void 0 ? options.elevenLabsSpeakerBoost : true
+          } : void 0
         });
         return {
           success: true,
@@ -4976,6 +5032,10 @@ var DEFAULT_SETTINGS = {
   edgeVoice: "ko-KR-SunHiNeural",
   elevenLabsApiKey: "",
   elevenLabsVoiceId: "",
+  elevenLabsStability: 0.5,
+  elevenLabsSimilarityBoost: 0.75,
+  elevenLabsStyle: 0,
+  elevenLabsSpeakerBoost: true,
   // Gemini TTS defaults
   geminiTtsVoice: "Kore",
   geminiTtsLanguage: "auto",
@@ -5080,6 +5140,10 @@ var VoiceBriefingPlugin = class extends import_obsidian8.Plugin {
         edgeVoice: options.edgeVoice,
         elevenLabsApiKey: this.settings.elevenLabsApiKey,
         elevenLabsVoiceId: this.settings.elevenLabsVoiceId,
+        elevenLabsStability: this.settings.elevenLabsStability,
+        elevenLabsSimilarityBoost: this.settings.elevenLabsSimilarityBoost,
+        elevenLabsStyle: this.settings.elevenLabsStyle,
+        elevenLabsSpeakerBoost: this.settings.elevenLabsSpeakerBoost,
         // Gemini TTS options
         geminiApiKey: this.settings.geminiApiKey,
         geminiVoice: options.geminiVoice,
@@ -5444,6 +5508,62 @@ var VoiceBriefingSettingTab = class extends import_obsidian8.PluginSettingTab {
     if (this.plugin.settings.ttsEngine === "elevenlabs") {
       new import_obsidian8.Setting(containerEl).setName("ElevenLabs Voice ID").setDesc("Enter your ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
         this.plugin.settings.elevenLabsVoiceId = value;
+        await this.plugin.saveSettings();
+      }));
+      containerEl.createEl("h3", { text: "\u{1F39A}\uFE0F Voice Characteristics" });
+      new import_obsidian8.Setting(containerEl).setName("Voice Template").setDesc("Select a preset to automatically configure settings below").addDropdown((dropdown) => dropdown.addOption("custom", "Custom / Manual Configuration").addOption("briefing", "\u{1F4CA} Briefing (Balanced)").addOption("lecture", "\u{1F393} Lecture (Clear & Stable)").addOption("news", "\u{1F4F0} News (Formal & Flat)").addOption("story", "\u{1F3AD} Storytelling (Expressive)").addOption("asmr", "\u{1F92B} ASMR (Soft & Detailed)").setValue("custom").onChange(async (value) => {
+        if (value === "custom")
+          return;
+        switch (value) {
+          case "briefing":
+            this.plugin.settings.elevenLabsStability = 0.5;
+            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+            this.plugin.settings.elevenLabsStyle = 0;
+            this.plugin.settings.elevenLabsSpeakerBoost = true;
+            break;
+          case "lecture":
+            this.plugin.settings.elevenLabsStability = 0.75;
+            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+            this.plugin.settings.elevenLabsStyle = 0;
+            this.plugin.settings.elevenLabsSpeakerBoost = true;
+            break;
+          case "news":
+            this.plugin.settings.elevenLabsStability = 0.85;
+            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+            this.plugin.settings.elevenLabsStyle = 0;
+            this.plugin.settings.elevenLabsSpeakerBoost = true;
+            break;
+          case "story":
+            this.plugin.settings.elevenLabsStability = 0.4;
+            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
+            this.plugin.settings.elevenLabsStyle = 0.45;
+            this.plugin.settings.elevenLabsSpeakerBoost = true;
+            break;
+          case "asmr":
+            this.plugin.settings.elevenLabsStability = 0.5;
+            this.plugin.settings.elevenLabsSimilarityBoost = 0.9;
+            this.plugin.settings.elevenLabsStyle = 0;
+            this.plugin.settings.elevenLabsSpeakerBoost = false;
+            break;
+        }
+        await this.plugin.saveSettings();
+        this.display();
+        new import_obsidian8.Notice(`Applied "${value}" template`);
+      }));
+      new import_obsidian8.Setting(containerEl).setName("Stability").setDesc("Higher = more consistent/monotone. Lower = more emotive/random.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsStability).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.elevenLabsStability = value;
+        await this.plugin.saveSettings();
+      }));
+      new import_obsidian8.Setting(containerEl).setName("Clarity + Similarity Boost").setDesc("Higher = closer to original voice but potential artifacts. Lower = clearer but generic.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsSimilarityBoost).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.elevenLabsSimilarityBoost = value;
+        await this.plugin.saveSettings();
+      }));
+      new import_obsidian8.Setting(containerEl).setName("Style Exaggeration").setDesc("Higher = more exaggerated style. 0 = neutral.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsStyle).setDynamicTooltip().onChange(async (value) => {
+        this.plugin.settings.elevenLabsStyle = value;
+        await this.plugin.saveSettings();
+      }));
+      new import_obsidian8.Setting(containerEl).setName("Speaker Boost").setDesc("Boosts the volume and clarity of the speaker.").addToggle((toggle) => toggle.setValue(this.plugin.settings.elevenLabsSpeakerBoost).onChange(async (value) => {
+        this.plugin.settings.elevenLabsSpeakerBoost = value;
         await this.plugin.saveSettings();
       }));
     }

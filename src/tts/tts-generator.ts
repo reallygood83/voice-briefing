@@ -16,6 +16,10 @@ export interface TTSGenerationOptions {
 	elevenLabsApiKey?: string;
 	elevenLabsVoiceId?: string;
 	elevenLabsModelId?: string;
+	elevenLabsStability?: number;
+	elevenLabsSimilarityBoost?: number;
+	elevenLabsStyle?: number;
+	elevenLabsSpeakerBoost?: boolean;
 
 	// Gemini TTS options
 	geminiApiKey?: string;
@@ -95,7 +99,13 @@ export class TTSGenerator {
 			voiceId: options.elevenLabsVoiceId,
 			text: options.text,
 			outputPath: options.outputPath,
-			modelId: options.elevenLabsModelId
+			modelId: options.elevenLabsModelId,
+			voiceSettings: (options.elevenLabsStability !== undefined) ? {
+				stability: options.elevenLabsStability,
+				similarity_boost: options.elevenLabsSimilarityBoost || 0.75,
+				style: options.elevenLabsStyle || 0.0,
+				use_speaker_boost: options.elevenLabsSpeakerBoost !== undefined ? options.elevenLabsSpeakerBoost : true
+			} : undefined
 		});
 
 		return {
@@ -133,11 +143,11 @@ export class TTSGenerator {
 		return await this.edgeHandler.listVoices();
 	}
 
-	async listElevenLabsVoices(apiKey: string): Promise<Array<{id: string, name: string}>> {
+	async listElevenLabsVoices(apiKey: string): Promise<Array<{ id: string, name: string }>> {
 		return await this.elevenLabsHandler.listVoices(apiKey);
 	}
 
-	async getElevenLabsUsage(apiKey: string): Promise<{character_count: number, character_limit: number}> {
+	async getElevenLabsUsage(apiKey: string): Promise<{ character_count: number, character_limit: number }> {
 		return await this.elevenLabsHandler.getUsage(apiKey);
 	}
 

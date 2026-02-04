@@ -80,60 +80,85 @@ export class GeminiTTSHandler {
 		try {
 			const voiceName = options.voiceName || 'Kore';
 
-			// Build the request body
-			const requestBody: any = {
-				contents: [{
-					parts: [{
-						text: options.text
-					}]
-				}],
-				generationConfig: {
-					responseModalities: ['AUDIO'],
-					speechConfig: {
-						voiceConfig: {
-							prebuiltVoiceConfig: {
-								voiceName: voiceName
+			// Chunk text to avoid truncation limits (reported ~20s limit)
+			// Using 200 chars as a safe chunk size
+			const CHUNK_SIZE = 200;
+			const chunks = this.chunkText(options.text, CHUNK_SIZE);
+			
+			console.log(`Gemini TTS: Processing ${chunks.length} chunks for ${options.text.length} chars (Chunk size: ${CHUNK_SIZE})`);
+
+			const pcmBuffers: Buffer[] = [];
+
+			for (let i = 0; i < chunks.length; i++) {
+				const chunk = chunks[i];
+				
+				// Skip empty chunks
+				if (!chunk.trim()) continue;
+
+				console.log(`Gemini TTS request chunk ${i+1}/${chunks.length}: ${chunk.length} chars`);
+
+				// Build the request body
+				const requestBody: any = {
+					contents: [{
+						parts: [{
+							text: chunk
+						}]
+					}],
+					generationConfig: {
+						responseModalities: ['AUDIO'],
+						speechConfig: {
+							voiceConfig: {
+								prebuiltVoiceConfig: {
+									voiceName: voiceName
+								}
 							}
 						}
 					}
+				};
+
+				const response = await requestUrl({
+					url: `${this.API_URL}?key=${options.apiKey}`,
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify(requestBody)
+				});
+
+				if (response.status !== 200) {
+					const errorText = response.text;
+					console.error('Gemini TTS API error:', errorText);
+					throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
 				}
-			};
 
-			console.log('Gemini TTS request:', {
-				voice: voiceName,
-				textLength: options.text.length
-			});
+				const responseData = response.json;
 
-			const response = await requestUrl({
-				url: `${this.API_URL}?key=${options.apiKey}`,
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(requestBody)
-			});
+				// Extract audio data from response
+				const audioData = responseData?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
-			if (response.status !== 200) {
-				const errorText = response.text;
-				console.error('Gemini TTS API error:', errorText);
-				throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
+				if (!audioData) {
+					console.error('Gemini TTS response:', JSON.stringify(responseData, null, 2));
+					throw new Error(`No audio data in Gemini TTS response for chunk ${i+1}`);
+				}
+
+				// Decode base64 PCM data and store it
+				pcmBuffers.push(Buffer.from(audioData, 'base64'));
+				
+				// Add a small delay between requests to avoid rate limits
+				if (i < chunks.length - 1) {
+					await new Promise(resolve => setTimeout(resolve, 200));
+				}
 			}
 
-			const responseData = response.json;
-
-			// Extract audio data from response
-			const audioData = responseData?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-			if (!audioData) {
-				console.error('Gemini TTS response:', JSON.stringify(responseData, null, 2));
-				throw new Error('No audio data in Gemini TTS response');
+			if (pcmBuffers.length === 0) {
+				throw new Error('No audio content generated from chunks');
 			}
 
-			// Decode base64 PCM data
-			const pcmBuffer = Buffer.from(audioData, 'base64');
+			// Concatenate all PCM buffers
+			const completePcmBuffer = Buffer.concat(pcmBuffers);
 
 			// Convert PCM to WAV format
-			const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
+			const wavBuffer = this.pcmToWav(completePcmBuffer, 24000, 16, 1);
 
 			// Determine output path - change extension to .wav if needed
 			let outputPath = options.outputPath;
@@ -163,6 +188,58 @@ export class GeminiTTSHandler {
 
 			throw new Error(`Gemini TTS generation failed: ${error.message}`);
 		}
+	}
+
+	/**
+	 * Split text into chunks respecting sentence boundaries
+	 */
+	private chunkText(text: string, maxLength: number): string[] {
+		if (text.length <= maxLength) return [text];
+		
+		const chunks: string[] = [];
+		let currentChunk = '';
+		
+		// Split by sentence endings (. ! ? \n) keeping the delimiters
+		// This regex matches non-delimiters followed by delimiters, or non-delimiters at end
+		const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
+		
+		for (const sentence of sentences) {
+			// If adding this sentence exceeds max length
+			if (currentChunk.length + sentence.length > maxLength) {
+				// Push current chunk if it has content
+				if (currentChunk.length > 0) {
+					chunks.push(currentChunk.trim());
+					currentChunk = '';
+				}
+				
+				// If the sentence itself is longer than max length, force split it
+				if (sentence.length > maxLength) {
+					let remaining = sentence;
+					while (remaining.length > maxLength) {
+						// Try to split at nearest space within limits
+						let splitIndex = remaining.lastIndexOf(' ', maxLength);
+						if (splitIndex === -1) splitIndex = maxLength; // No space, hard cut
+						
+						chunks.push(remaining.substring(0, splitIndex).trim());
+						remaining = remaining.substring(splitIndex).trim();
+					}
+					currentChunk = remaining;
+				} else {
+					// Otherwise start new chunk with this sentence
+					currentChunk = sentence;
+				}
+			} else {
+				// Append to current chunk
+				currentChunk += sentence;
+			}
+		}
+		
+		// Add remaining chunk
+		if (currentChunk.trim().length > 0) {
+			chunks.push(currentChunk.trim());
+		}
+		
+		return chunks;
 	}
 
 	/**

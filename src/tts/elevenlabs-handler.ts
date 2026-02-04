@@ -7,6 +7,12 @@ export interface ElevenLabsOptions {
 	text: string;
 	outputPath: string;
 	modelId?: string;
+	voiceSettings?: {
+		stability: number;
+		similarity_boost: number;
+		style: number;
+		use_speaker_boost: boolean;
+	};
 }
 
 export class ElevenLabsHandler {
@@ -27,7 +33,7 @@ export class ElevenLabsHandler {
 				body: JSON.stringify({
 					text: options.text,
 					model_id: modelId,
-					voice_settings: {
+					voice_settings: options.voiceSettings || {
 						stability: 0.5,
 						similarity_boost: 0.75,
 						style: 0.0,
@@ -60,7 +66,7 @@ export class ElevenLabsHandler {
 		}
 	}
 
-	async listVoices(apiKey: string): Promise<Array<{id: string, name: string}>> {
+	async listVoices(apiKey: string): Promise<Array<{ id: string, name: string }>> {
 		try {
 			const response = await requestUrl({
 				url: `${this.API_URL}/voices`,
@@ -85,7 +91,7 @@ export class ElevenLabsHandler {
 		}
 	}
 
-	async getUsage(apiKey: string): Promise<{character_count: number, character_limit: number}> {
+	async getUsage(apiKey: string): Promise<{ character_count: number, character_limit: number }> {
 		try {
 			const response = await requestUrl({
 				url: `${this.API_URL}/user/subscription`,
