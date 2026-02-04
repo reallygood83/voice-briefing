@@ -108,8 +108,9 @@ var init_gemini_tts_handler = __esm({
         try {
           const voiceName = options.voiceName || "Kore";
           const languageCode = options.languageCode === "auto" ? "en-US" : options.languageCode || "en-US";
+          const modelId = options.modelId || "gemini-2.5-flash-tts";
           const chunks = this.chunkText(options.text, this.MAX_TEXT_BYTES);
-          console.log(`Gemini TTS: Processing ${chunks.length} chunks`);
+          console.log(`Gemini TTS: Processing ${chunks.length} chunks with model ${modelId}`);
           const audioBuffers = [];
           for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
@@ -123,7 +124,7 @@ var init_gemini_tts_handler = __esm({
               voice: {
                 languageCode,
                 name: voiceName,
-                model_name: "gemini-2.5-flash-tts"
+                model_name: modelId
               },
               audioConfig: {
                 audioEncoding: "LINEAR16",
@@ -4111,7 +4112,8 @@ var init_tts_generator = __esm({
           text: options.text,
           outputPath,
           voiceName: options.geminiVoice || "Kore",
-          languageCode: options.geminiLanguage
+          languageCode: options.geminiLanguage,
+          modelId: options.geminiModel
         });
         return {
           success: true,
@@ -5126,6 +5128,7 @@ var DEFAULT_SETTINGS = {
   // Gemini TTS defaults
   geminiTtsVoice: "Kore",
   geminiTtsLanguage: "auto",
+  geminiTtsModel: "gemini-2.5-flash-tts",
   // xAI TTS defaults
   xaiTtsVoice: "Sal",
   cloudSharingEnabled: false,
@@ -5235,6 +5238,7 @@ var VoiceBriefingPlugin = class extends import_obsidian8.Plugin {
         geminiApiKey: this.settings.geminiApiKey,
         geminiVoice: options.geminiVoice,
         geminiLanguage: options.geminiLanguage,
+        geminiModel: this.settings.geminiTtsModel,
         // xAI TTS options
         xaiApiKey: this.settings.xaiApiKey,
         xaiVoice: options.xaiVoice
@@ -5498,6 +5502,12 @@ var VoiceBriefingSettingTab = class extends import_obsidian8.PluginSettingTab {
       return text;
     });
     if (this.plugin.settings.ttsEngine === "gemini") {
+      new import_obsidian8.Setting(containerEl).setName("Gemini TTS Model").setDesc("Select TTS model: Flash (fast), Flash Lite (cheaper), Pro (high quality)").addDropdown((dropdown) => {
+        dropdown.addOption("gemini-2.5-flash-tts", "\u26A1 Flash (Recommended)").addOption("gemini-2.5-flash-lite-preview-tts", "\u{1F4B0} Flash Lite (Cheaper, Preview)").addOption("gemini-2.5-pro-tts", "\u{1F3AF} Pro (High Quality)").setValue(this.plugin.settings.geminiTtsModel).onChange(async (value) => {
+          this.plugin.settings.geminiTtsModel = value;
+          await this.plugin.saveSettings();
+        });
+      });
       new import_obsidian8.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender) - 30 voice options").addDropdown((dropdown) => {
         const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
         const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");

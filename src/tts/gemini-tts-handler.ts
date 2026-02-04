@@ -7,6 +7,7 @@ export interface GeminiTTSOptions {
 	outputPath: string;
 	voiceName?: string;
 	languageCode?: string;
+	modelId?: string;
 }
 
 export const GEMINI_TTS_VOICES = [
@@ -78,9 +79,10 @@ export class GeminiTTSHandler {
 		try {
 			const voiceName = options.voiceName || 'Kore';
 			const languageCode = options.languageCode === 'auto' ? 'en-US' : (options.languageCode || 'en-US');
+			const modelId = options.modelId || 'gemini-2.5-flash-tts';
 
 			const chunks = this.chunkText(options.text, this.MAX_TEXT_BYTES);
-			console.log(`Gemini TTS: Processing ${chunks.length} chunks`);
+			console.log(`Gemini TTS: Processing ${chunks.length} chunks with model ${modelId}`);
 
 			const audioBuffers: Buffer[] = [];
 
@@ -97,7 +99,7 @@ export class GeminiTTSHandler {
 					voice: {
 						languageCode: languageCode,
 						name: voiceName,
-						model_name: 'gemini-2.5-flash-tts'
+						model_name: modelId
 					},
 					audioConfig: {
 						audioEncoding: 'LINEAR16',

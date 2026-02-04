@@ -25,6 +25,7 @@ export interface TTSGenerationOptions {
 	geminiApiKey?: string;
 	geminiVoice?: string;
 	geminiLanguage?: string;
+	geminiModel?: string;
 
 	// xAI TTS options
 	xaiApiKey?: string;
@@ -130,7 +131,8 @@ export class TTSGenerator {
 			text: options.text,
 			outputPath: outputPath,
 			voiceName: options.geminiVoice || 'Kore',
-			languageCode: options.geminiLanguage
+			languageCode: options.geminiLanguage,
+			modelId: options.geminiModel
 		});
 
 		return {

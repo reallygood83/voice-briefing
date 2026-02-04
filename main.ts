@@ -577,6 +577,7 @@ interface VoiceBriefingSettings {
 	// Gemini TTS Settings
 	geminiTtsVoice: string;
 	geminiTtsLanguage: string;
+	geminiTtsModel: 'gemini-2.5-flash-tts' | 'gemini-2.5-flash-lite-preview-tts' | 'gemini-2.5-pro-tts';
 
 	// xAI TTS Settings
 	xaiTtsVoice: string;
@@ -634,6 +635,7 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	// Gemini TTS defaults
 	geminiTtsVoice: 'Kore',
 	geminiTtsLanguage: 'auto',
+	geminiTtsModel: 'gemini-2.5-flash-tts',
 
 	// xAI TTS defaults
 	xaiTtsVoice: 'Sal',
@@ -788,9 +790,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 				elevenLabsStyle: this.settings.elevenLabsStyle,
 				elevenLabsSpeakerBoost: this.settings.elevenLabsSpeakerBoost,
 				// Gemini TTS options
-				geminiApiKey: this.settings.geminiApiKey,
-				geminiVoice: options.geminiVoice,
-				geminiLanguage: options.geminiLanguage,
+					geminiApiKey: this.settings.geminiApiKey,
+						geminiVoice: options.geminiVoice,
+						geminiLanguage: options.geminiLanguage,
+						geminiModel: this.settings.geminiTtsModel,
 				// xAI TTS options
 				xaiApiKey: this.settings.xaiApiKey,
 				xaiVoice: options.xaiVoice
@@ -1226,6 +1229,21 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 
 		// Gemini TTS Voice Settings
 		if (this.plugin.settings.ttsEngine === 'gemini') {
+			new Setting(containerEl)
+				.setName('Gemini TTS Model')
+				.setDesc('Select TTS model: Flash (fast), Flash Lite (cheaper), Pro (high quality)')
+				.addDropdown(dropdown => {
+					dropdown
+						.addOption('gemini-2.5-flash-tts', '⚡ Flash (Recommended)')
+						.addOption('gemini-2.5-flash-lite-preview-tts', '💰 Flash Lite (Cheaper, Preview)')
+						.addOption('gemini-2.5-pro-tts', '🎯 Pro (High Quality)')
+						.setValue(this.plugin.settings.geminiTtsModel)
+						.onChange(async (value: 'gemini-2.5-flash-tts' | 'gemini-2.5-flash-lite-preview-tts' | 'gemini-2.5-pro-tts') => {
+							this.plugin.settings.geminiTtsModel = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
 			new Setting(containerEl)
 				.setName('Default Gemini Voice')
 				.setDesc('Select default voice (grouped by gender) - 30 voice options')
