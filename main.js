@@ -102,7 +102,7 @@ var init_gemini_tts_handler = __esm({
     GeminiTTSHandler = class {
       constructor() {
         this.API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-        this.CHUNK_SIZE = 200;
+        this.CHUNK_SIZE = 100;
       }
       async generate(options) {
         var _a, _b, _c, _d, _e, _f;

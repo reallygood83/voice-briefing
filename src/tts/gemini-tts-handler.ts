@@ -73,7 +73,7 @@ export const GEMINI_TTS_LANGUAGES = [
 
 export class GeminiTTSHandler {
 	private readonly API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-	private readonly CHUNK_SIZE = 200;
+	private readonly CHUNK_SIZE = 100;
 
 	async generate(options: GeminiTTSOptions): Promise<void> {
 		try {
