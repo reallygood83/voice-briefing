@@ -74,7 +74,7 @@ export const GEMINI_TTS_LANGUAGES = [
 ] as const;
 
 export class GeminiTTSHandler {
-	private readonly API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
+	private readonly API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent';
 
 	async generate(options: GeminiTTSOptions): Promise<void> {
 		try {
@@ -84,18 +84,18 @@ export class GeminiTTSHandler {
 			// Using 200 chars as a safe chunk size
 			const CHUNK_SIZE = 200;
 			const chunks = this.chunkText(options.text, CHUNK_SIZE);
-			
+
 			console.log(`Gemini TTS: Processing ${chunks.length} chunks for ${options.text.length} chars (Chunk size: ${CHUNK_SIZE})`);
 
 			const pcmBuffers: Buffer[] = [];
 
 			for (let i = 0; i < chunks.length; i++) {
 				const chunk = chunks[i];
-				
+
 				// Skip empty chunks
 				if (!chunk.trim()) continue;
 
-				console.log(`Gemini TTS request chunk ${i+1}/${chunks.length}: ${chunk.length} chars`);
+				console.log(`Gemini TTS request chunk ${i + 1}/${chunks.length}: ${chunk.length} chars`);
 
 				// Build the request body
 				const requestBody: any = {
@@ -138,12 +138,12 @@ export class GeminiTTSHandler {
 
 				if (!audioData) {
 					console.error('Gemini TTS response:', JSON.stringify(responseData, null, 2));
-					throw new Error(`No audio data in Gemini TTS response for chunk ${i+1}`);
+					throw new Error(`No audio data in Gemini TTS response for chunk ${i + 1}`);
 				}
 
 				// Decode base64 PCM data and store it
 				pcmBuffers.push(Buffer.from(audioData, 'base64'));
-				
+
 				// Add a small delay between requests to avoid rate limits
 				if (i < chunks.length - 1) {
 					await new Promise(resolve => setTimeout(resolve, 200));
@@ -195,14 +195,14 @@ export class GeminiTTSHandler {
 	 */
 	private chunkText(text: string, maxLength: number): string[] {
 		if (text.length <= maxLength) return [text];
-		
+
 		const chunks: string[] = [];
 		let currentChunk = '';
-		
+
 		// Split by sentence endings (. ! ? \n) keeping the delimiters
 		// This regex matches non-delimiters followed by delimiters, or non-delimiters at end
 		const sentences = text.match(/[^.!?\n]+[.!?\n]+(?:\s+|$)|[^.!?\n]+$/g) || [text];
-		
+
 		for (const sentence of sentences) {
 			// If adding this sentence exceeds max length
 			if (currentChunk.length + sentence.length > maxLength) {
@@ -211,7 +211,7 @@ export class GeminiTTSHandler {
 					chunks.push(currentChunk.trim());
 					currentChunk = '';
 				}
-				
+
 				// If the sentence itself is longer than max length, force split it
 				if (sentence.length > maxLength) {
 					let remaining = sentence;
@@ -219,7 +219,7 @@ export class GeminiTTSHandler {
 						// Try to split at nearest space within limits
 						let splitIndex = remaining.lastIndexOf(' ', maxLength);
 						if (splitIndex === -1) splitIndex = maxLength; // No space, hard cut
-						
+
 						chunks.push(remaining.substring(0, splitIndex).trim());
 						remaining = remaining.substring(splitIndex).trim();
 					}
@@ -233,12 +233,12 @@ export class GeminiTTSHandler {
 				currentChunk += sentence;
 			}
 		}
-		
+
 		// Add remaining chunk
 		if (currentChunk.trim().length > 0) {
 			chunks.push(currentChunk.trim());
 		}
-		
+
 		return chunks;
 	}
 

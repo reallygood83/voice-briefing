@@ -101,7 +101,7 @@ var init_gemini_tts_handler = __esm({
     ];
     GeminiTTSHandler = class {
       constructor() {
-        this.API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent";
+        this.API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent";
       }
       async generate(options) {
         var _a, _b, _c, _d, _e, _f;
