@@ -3847,10 +3847,28 @@ var init_elevenlabs_handler = __esm({
     ElevenLabsHandler = class {
       constructor() {
         this.API_URL = "https://api.elevenlabs.io/v1";
+        this.MAX_TEXT_LENGTH = 5e3;
       }
       async generate(options) {
+        this.validateOptions(options);
+        if (options.text.length > this.MAX_TEXT_LENGTH) {
+          console.warn(`Text length (${options.text.length}) exceeds limit. Truncating.`);
+          options.text = options.text.substring(0, this.MAX_TEXT_LENGTH);
+        }
         try {
           const modelId = options.modelId || "eleven_multilingual_v2";
+          const voiceSettings = this.buildVoiceSettings(options.voiceSettings, modelId);
+          const requestBody = {
+            text: options.text,
+            model_id: modelId,
+            voice_settings: voiceSettings
+          };
+          console.log("ElevenLabs request:", {
+            url: `${this.API_URL}/text-to-speech/${options.voiceId}`,
+            modelId,
+            textLength: options.text.length,
+            voiceSettings
+          });
           const response = await (0, import_obsidian4.requestUrl)({
             url: `${this.API_URL}/text-to-speech/${options.voiceId}`,
             method: "POST",
@@ -3859,32 +3877,83 @@ var init_elevenlabs_handler = __esm({
               "Content-Type": "application/json",
               "xi-api-key": options.apiKey
             },
-            body: JSON.stringify({
-              text: options.text,
-              model_id: modelId,
-              voice_settings: options.voiceSettings || {
-                stability: 0.5,
-                similarity_boost: 0.75,
-                style: 0,
-                use_speaker_boost: true
-              }
-            })
+            body: JSON.stringify(requestBody),
+            throw: false
           });
           if (response.status !== 200) {
-            throw new Error(`ElevenLabs API error: ${response.status}`);
+            throw new Error(this.parseErrorResponse(response));
           }
           const buffer = Buffer.from(response.arrayBuffer);
           await (0, import_promises3.writeFile)(options.outputPath, buffer);
           new import_obsidian4.Notice("\u2705 Audio generated successfully with ElevenLabs");
         } catch (error) {
           console.error("ElevenLabs error:", error);
-          if (error.message.includes("401")) {
-            throw new Error("Invalid ElevenLabs API key");
-          }
-          if (error.message.includes("quota")) {
-            throw new Error("ElevenLabs quota exceeded. Please check your plan limits.");
+          if (error.message.startsWith("ElevenLabs")) {
+            throw error;
           }
           throw new Error(`ElevenLabs generation failed: ${error.message}`);
+        }
+      }
+      validateOptions(options) {
+        var _a, _b, _c;
+        if (!((_a = options.voiceId) == null ? void 0 : _a.trim())) {
+          throw new Error("ElevenLabs Voice ID is required. Please set it in plugin settings.");
+        }
+        if (!((_b = options.apiKey) == null ? void 0 : _b.trim())) {
+          throw new Error("ElevenLabs API Key is required. Please set it in plugin settings.");
+        }
+        if (!((_c = options.text) == null ? void 0 : _c.trim())) {
+          throw new Error("Text is required for TTS generation.");
+        }
+      }
+      buildVoiceSettings(settings, modelId) {
+        var _a, _b, _c, _d;
+        const voiceSettings = {
+          stability: (_a = settings == null ? void 0 : settings.stability) != null ? _a : 0.5,
+          similarity_boost: (_b = settings == null ? void 0 : settings.similarity_boost) != null ? _b : 0.75
+        };
+        if (modelId.includes("v2")) {
+          voiceSettings.style = (_c = settings == null ? void 0 : settings.style) != null ? _c : 0;
+          voiceSettings.use_speaker_boost = (_d = settings == null ? void 0 : settings.use_speaker_boost) != null ? _d : true;
+        }
+        return voiceSettings;
+      }
+      parseErrorResponse(response) {
+        let errorMessage = `ElevenLabs API error (${response.status})`;
+        try {
+          const errorBody = response.json;
+          if (errorBody == null ? void 0 : errorBody.detail) {
+            errorMessage = typeof errorBody.detail === "object" ? `ElevenLabs: ${errorBody.detail.message || JSON.stringify(errorBody.detail)}` : `ElevenLabs: ${errorBody.detail}`;
+          } else if (errorBody == null ? void 0 : errorBody.message) {
+            errorMessage = `ElevenLabs: ${errorBody.message}`;
+          } else if (errorBody == null ? void 0 : errorBody.error) {
+            errorMessage = `ElevenLabs: ${errorBody.error}`;
+          }
+          if (errorBody) {
+            console.error("ElevenLabs API error response:", errorBody);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse ElevenLabs error response:", parseError);
+        }
+        return this.enhanceErrorMessage(errorMessage, response.status);
+      }
+      enhanceErrorMessage(message, status) {
+        switch (status) {
+          case 400:
+            return `${message}
+
+Possible causes:
+- Invalid Voice ID
+- Text too long
+- Invalid model ID`;
+          case 401:
+            return "Invalid ElevenLabs API key. Please check your API key in settings.";
+          case 403:
+            return "ElevenLabs API access denied. Check your subscription plan.";
+          case 429:
+            return "ElevenLabs rate limit exceeded. Please wait and try again.";
+          default:
+            return message;
         }
       }
       async listVoices(apiKey) {
