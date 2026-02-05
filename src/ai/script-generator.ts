@@ -17,7 +17,8 @@ export interface ScriptGenerationResult {
 }
 
 export class ScriptGenerator {
-	private readonly MIN_SCRIPT_LENGTH = 1200;
+	private readonly MIN_SCRIPT_LENGTH = 500;
+	private readonly MAX_SCRIPT_LENGTH = 1800;
 	private readonly MAX_RETRIES = 2;
 
 	async generate(options: ScriptGenerationOptions): Promise<ScriptGenerationResult> {
@@ -32,6 +33,11 @@ export class ScriptGenerator {
 			attempts++;
 		}
 
+		if (script.length > this.MAX_SCRIPT_LENGTH) {
+			console.log(`Script Generator: Script too long (${script.length} chars), trimming to ${this.MAX_SCRIPT_LENGTH}`);
+			script = this.trimScript(script);
+		}
+
 		const estimatedDuration = this.estimateDuration(script, options.language);
 		console.log(`Script Generator: Final script ${script.length} chars, estimated ${estimatedDuration}s`);
 		
@@ -41,6 +47,20 @@ export class ScriptGenerator {
 		}
 
 		return { script, estimatedDuration };
+	}
+
+	private trimScript(script: string): string {
+		const sentences = script.match(/[^.!?]+[.!?]+/g) || [script];
+		let trimmed = '';
+		
+		for (const sentence of sentences) {
+			if ((trimmed + sentence).length > this.MAX_SCRIPT_LENGTH) {
+				break;
+			}
+			trimmed += sentence;
+		}
+		
+		return trimmed.trim() || script.substring(0, this.MAX_SCRIPT_LENGTH);
 	}
 
 	private async generateScript(options: ScriptGenerationOptions): Promise<string> {
@@ -62,7 +82,7 @@ export class ScriptGenerator {
 	}
 
 	private async expandScript(shortScript: string, options: ScriptGenerationOptions): Promise<string> {
-		const expandPrompt = `The following script is too short for a proper voice briefing. Please EXPAND it to at least 300 words (1500+ characters) while maintaining the same topic and tone.
+		const expandPrompt = `The following script is too short. Please expand it slightly while maintaining the same topic and tone.
 
 CURRENT SHORT SCRIPT (${shortScript.length} chars):
 ---
@@ -70,11 +90,10 @@ ${shortScript}
 ---
 
 EXPANSION REQUIREMENTS:
-- Add more detailed explanations for each point
-- Include relevant examples, analogies, or context
-- Add smooth transitions between ideas
-- Expand the introduction and conclusion
-- The final script must be at least 1500 characters
+- Add a bit more context or explanation
+- Keep it CONCISE - target 100-150 words total
+- Maximum 60-90 seconds when spoken
+- Do NOT over-expand
 
 Write the expanded script now (output ONLY the expanded script, no meta-commentary):`;
 
@@ -106,36 +125,35 @@ Write the expanded script now (output ONLY the expanded script, no meta-commenta
 		const langInstruction = languageInstructions[language] || 'in English';
 
 		if (style === 'custom' && customPrompt) {
-			return `You are a voice briefing script writer. ${customPrompt}\n\nWrite ${langInstruction}. You MUST write at least 300 words (approximately 1.5-2 minutes of audio). Be detailed and thorough.`;
+			return `You are a voice briefing script writer. ${customPrompt}\n\nWrite ${langInstruction}. Keep it CONCISE: 100-150 words, approximately 60-90 seconds of audio. Be clear and focused.`;
 		}
 
 		const stylePrompts: Record<string, string> = {
-			'metaphor': `You are a voice briefing script writer who creates detailed, engaging audio content using analogies and metaphors.
+			'metaphor': `You are a voice briefing script writer who creates concise, engaging audio content using analogies and metaphors.
 
 Your writing style:
-- Use relatable analogies to explain complex concepts
-- Paint vivid mental pictures for listeners
-- Connect abstract ideas to everyday experiences
+- Use one or two relatable analogies
+- Keep explanations brief and impactful
+- Focus on the key message
 
-Write ${langInstruction}. You MUST write at least 300 words (about 1.5-2 minutes of audio).`,
+Write ${langInstruction}. STRICT LIMIT: 100-150 words (60-90 seconds of audio). Be concise.`,
 
-			'feynman': `You are a voice briefing script writer using the Feynman Technique - creating detailed explanations as if teaching someone completely new to the topic.
+			'feynman': `You are a voice briefing script writer using the Feynman Technique - creating simple explanations as if teaching someone new to the topic.
 
 Your approach:
-1. Start with WHY this matters to the listener
-2. Break down HOW it works using simple, everyday language
-3. Provide concrete examples and analogies
-4. End with actionable takeaways
+1. Start with WHY this matters (1-2 sentences)
+2. Explain the core concept simply (3-4 sentences)
+3. Give one concrete example
+4. End with one key takeaway
 
-Write ${langInstruction}. You MUST write at least 300 words (about 1.5-2 minutes of audio). Never summarize briefly - always elaborate and explain thoroughly.`,
+Write ${langInstruction}. STRICT LIMIT: 100-150 words (60-90 seconds of audio). Be concise, not verbose.`,
 
-			'anchor': `You are a professional news anchor creating an in-depth briefing segment. Your style:
-- Authoritative yet accessible
-- Provides context and background
-- Explains implications and significance
-- Engages the listener throughout
+			'anchor': `You are a professional news anchor creating a brief segment. Your style:
+- Clear and authoritative
+- Focused on key points only
+- No unnecessary elaboration
 
-Write ${langInstruction}. You MUST write at least 300 words (about 1.5-2 minutes of audio). This is a full segment, not a headline summary.`
+Write ${langInstruction}. STRICT LIMIT: 100-150 words (60-90 seconds of audio). This is a quick briefing, not an in-depth report.`
 		};
 
 		return stylePrompts[style] || stylePrompts['feynman'];
@@ -147,26 +165,25 @@ Write ${langInstruction}. You MUST write at least 300 words (about 1.5-2 minutes
 			? content.substring(0, maxLength) + '\n\n[... content truncated ...]'
 			: content;
 
-		return `Create a detailed voice briefing script (approximately 300-400 words, 1.5-2 minutes when spoken) from the following note content.
+		return `Create a CONCISE voice briefing script (100-150 words, 60-90 seconds when spoken) from the following note content.
 
-YOUR SCRIPT MUST INCLUDE:
-1. An engaging opening hook (2-3 sentences)
-2. Main content explanation with examples and context (10-15 sentences minimum)
-3. Key insights or implications (3-4 sentences)
-4. A memorable closing statement (1-2 sentences)
+YOUR SCRIPT STRUCTURE:
+1. Brief opening (1 sentence)
+2. Core message (3-5 sentences)
+3. Quick closing (1 sentence)
 
 CRITICAL LENGTH REQUIREMENT:
-- Minimum 300 words (approximately 1500 characters)
-- Do NOT summarize briefly - EXPAND and ELABORATE on the content
-- Add relevant context, examples, and explanations
-- If the source content is short, add background information and implications
+- MAXIMUM 150 words (approximately 90 seconds)
+- Be CONCISE - capture only the essential points
+- Do NOT over-explain or add unnecessary context
+- Prioritize clarity over completeness
 
 NOTE CONTENT TO TRANSFORM:
 ---
 ${truncatedContent}
 ---
 
-Now write a comprehensive, engaging voice briefing script of at least 300 words. Start directly with the script content (no meta-commentary).`;
+Write a brief, focused voice briefing script of 100-150 words. Start directly with the script content.`;
 	}
 
 	private async generateWithGemini(systemPrompt: string, userPrompt: string, apiKey: string, model: string): Promise<string> {
