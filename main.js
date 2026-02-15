@@ -3543,7 +3543,8 @@ var init_script_generator = __esm({
     ScriptGenerator = class {
       constructor() {
         this.MIN_SCRIPT_LENGTH = 500;
-        this.MAX_SCRIPT_LENGTH = 1800;
+        this.MAX_SCRIPT_LENGTH = 3600;
+        // ~2-3 minutes of audio
         this.MAX_RETRIES = 2;
       }
       async generate(options) {
@@ -3580,7 +3581,7 @@ var init_script_generator = __esm({
       }
       async generateScript(options) {
         const systemPrompt = this.buildSystemPrompt(options.language, options.style, options.customPrompt);
-        const userPrompt = this.buildUserPrompt(options.content, options.language);
+        const userPrompt = this.buildUserPrompt(options.content, options.language, options.style);
         switch (options.provider) {
           case "gemini":
             return await this.generateWithGemini(systemPrompt, userPrompt, options.apiKey, options.modelName);
@@ -3636,7 +3637,7 @@ Write the expanded script now (output ONLY the expanded script, no meta-commenta
         if (style === "custom" && customPrompt) {
           return `You are a voice briefing script writer. ${customPrompt}
 
-Write ${langInstruction}. Keep it CONCISE: 100-150 words, approximately 60-90 seconds of audio. Be clear and focused.`;
+Write ${langInstruction}. Follow the user's instructions above for length and style.`;
         }
         const stylePrompts = {
           "metaphor": `You are a voice briefing script writer who creates concise, engaging audio content using analogies and metaphors.
@@ -3665,28 +3666,26 @@ Write ${langInstruction}. STRICT LIMIT: 100-150 words (60-90 seconds of audio). 
         };
         return stylePrompts[style] || stylePrompts["feynman"];
       }
-      buildUserPrompt(content, language) {
+      buildUserPrompt(content, language, style) {
         const maxLength = 8e3;
         const truncatedContent = content.length > maxLength ? content.substring(0, maxLength) + "\n\n[... content truncated ...]" : content;
-        return `Create a CONCISE voice briefing script (100-150 words, 60-90 seconds when spoken) from the following note content.
+        const lengthGuidance = style === "custom" ? "Follow the length specified in the system prompt above." : "Target 200-300 words (approximately 90-120 seconds when spoken).";
+        return `Create a voice briefing script from the following note content.
 
 YOUR SCRIPT STRUCTURE:
-1. Brief opening (1 sentence)
-2. Core message (3-5 sentences)
-3. Quick closing (1 sentence)
+1. Opening (1-2 sentences)
+2. Core message (main content)
+3. Closing (1 sentence)
 
-CRITICAL LENGTH REQUIREMENT:
-- MAXIMUM 150 words (approximately 90 seconds)
-- Be CONCISE - capture only the essential points
-- Do NOT over-explain or add unnecessary context
-- Prioritize clarity over completeness
+LENGTH GUIDANCE:
+${lengthGuidance}
 
 NOTE CONTENT TO TRANSFORM:
 ---
 ${truncatedContent}
 ---
 
-Write a brief, focused voice briefing script of 100-150 words. Start directly with the script content.`;
+Write the voice briefing script. Start directly with the script content.`;
       }
       async generateWithGemini(systemPrompt, userPrompt, apiKey, model) {
         var _a, _b, _c;
