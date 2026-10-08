@@ -19,7 +19,8 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18.x"
+          # Node 18 has no global crypto. PKCE tests call crypto.getRandomValues.
+          node-version: "22"
 
       - name: Build plugin
         run: |
