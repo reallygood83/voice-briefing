@@ -1,5 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
-import { writeFile } from 'fs/promises';
+import { writeDesktopFile } from '../desktop/files';
 import { pcmToWav } from '../audio/wav';
 import { redactSecrets } from '../ai/extract-text';
 
@@ -32,7 +32,7 @@ export class XaiTTSHandler {
 	 */
 	private async getEphemeralToken(apiKey: string): Promise<string> {
 		try {
-			console.log('[xAI] Fetching ephemeral token...');
+			console.debug('[xAI] Fetching ephemeral token...');
 
 			// Official xAI format: only expires_after is needed
 			const response = await requestUrl({
@@ -67,7 +67,7 @@ export class XaiTTSHandler {
 			else if (data.value) token = data.value;
 
 			if (token) {
-				console.log(`[xAI] Token found (length: ${token.length})`);
+				console.debug(`[xAI] Token found (length: ${token.length})`);
 				return token;
 			}
 
@@ -87,7 +87,7 @@ export class XaiTTSHandler {
 
 	async generate(options: XaiTTSOptions): Promise<void> {
 		const voiceName = options.voiceName || 'Sal';
-		console.log(`[xAI] Starting TTS generation. Voice: ${voiceName}, Text Length: ${options.text.length}`);
+		console.debug(`[xAI] Starting TTS generation. Voice: ${voiceName}, Text Length: ${options.text.length}`);
 
 		// First, get ephemeral token for authentication
 		const ephemeralToken = await this.getEphemeralToken(options.apiKey);
@@ -98,7 +98,7 @@ export class XaiTTSHandler {
 
 				// Create WebSocket connection using Native Browser API
 				// Authenticate via access_token query parameter (ephemeral token method)
-						console.log(`[xAI] Connecting to WebSocket model=${this.MODEL}`);
+						console.debug(`[xAI] Connecting to WebSocket model=${this.MODEL}`);
 
 				// Re-add model parameter which is required
 				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
@@ -110,7 +110,7 @@ export class XaiTTSHandler {
 				let conversationCreated = false;
 
 				ws.onopen = () => {
-					console.log('[xAI] WebSocket connected (onopen). Configuring session...');
+					console.debug('[xAI] WebSocket connected (onopen). Configuring session...');
 					// No separate auth message needed - ephemeral token is passed via query param
 					authenticated = true;
 					this.sendSessionConfig(ws, voiceName);
@@ -121,7 +121,7 @@ export class XaiTTSHandler {
 						const message = JSON.parse(event.data as string);
 						// Reduce noise by ignoring chunk events
 						if (message.type !== 'response.audio.delta' && message.type !== 'response.output_audio.delta') {
-							console.log('[xAI] Received message:', message.type, message);
+							console.debug('[xAI] Received message:', message.type, message);
 						}
 
 						switch (message.type) {
@@ -129,14 +129,14 @@ export class XaiTTSHandler {
 							case 'session.created':
 							case 'session.updated':
 								sessionCreated = true;
-								console.log('[xAI] Session ready. Sending text input...');
+								console.debug('[xAI] Session ready. Sending text input...');
 								this.sendTextInput(ws, options.text);
 								break;
 
 							// Conversation created event
 							case 'conversation.created':
 								conversationCreated = true;
-								console.log('[xAI] Conversation created.');
+								console.debug('[xAI] Conversation created.');
 								break;
 
 							// Audio output events (xAI uses response.output_audio.* format)
@@ -151,12 +151,12 @@ export class XaiTTSHandler {
 
 							case 'response.output_audio.done':
 							case 'response.audio.done':
-								console.log('[xAI] Audio stream completed. Total chunks:', audioChunks.length);
+								console.debug('[xAI] Audio stream completed. Total chunks:', audioChunks.length);
 								break;
 
 							case 'response.done':
 								if (audioChunks.length > 0) {
-									console.log('[xAI] Response done with audio. Saving...');
+									console.debug('[xAI] Response done with audio. Saving...');
 									this.saveAudio(audioChunks, options.outputPath, ws, resolve, reject);
 								} else if (!responseStarted) {
 									console.warn('[xAI] Response done but NO audio received.');
@@ -181,7 +181,7 @@ export class XaiTTSHandler {
 								break;
 
 							default:
-								console.log('[xAI] Unhandled message type:', message.type);
+								console.debug('[xAI] Unhandled message type:', message.type);
 								break;
 						}
 					} catch (parseError: any) {
@@ -195,14 +195,14 @@ export class XaiTTSHandler {
 				};
 
 				ws.onclose = (event: any) => {
-					console.log(`[xAI] WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+					console.debug(`[xAI] WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
 					if (!sessionCreated && !authenticated && event.code !== 1000) {
 						reject(new Error(`xAI WebSocket connection closed unexpectedly (Code ${event.code}). Authentication may have failed.`));
 					}
 				};
 
 				// Timeout after 60 seconds
-				setTimeout(() => {
+				window.setTimeout(() => {
 					if (ws.readyState === WebSocket.OPEN) {
 						console.warn('[xAI] Timed out waiting for completion. Closing socket.');
 						ws.close();
@@ -229,7 +229,7 @@ export class XaiTTSHandler {
 				output_audio_format: 'pcm16'
 			}
 		};
-		console.log('[xAI] Sending session config:', JSON.stringify(sessionConfig));
+		console.debug('[xAI] Sending session config:', JSON.stringify(sessionConfig));
 		ws.send(JSON.stringify(sessionConfig));
 	}
 
@@ -246,7 +246,7 @@ export class XaiTTSHandler {
 				}]
 			}
 		};
-		console.log('[xAI] Sending text input event...');
+		console.debug('[xAI] Sending text input event...');
 		ws.send(JSON.stringify(inputEvent));
 
 		// Request audio response
@@ -256,7 +256,7 @@ export class XaiTTSHandler {
 				modalities: ['audio']
 			}
 		};
-		console.log('[xAI] Requesting audio response generation...');
+		console.debug('[xAI] Requesting audio response generation...');
 		ws.send(JSON.stringify(responseEvent));
 	}
 
@@ -269,7 +269,7 @@ export class XaiTTSHandler {
 	): void {
 		// Combine all audio chunks
 		const pcmBuffer = Buffer.concat(audioChunks);
-		console.log('Total audio data received:', pcmBuffer.length, 'bytes');
+		console.debug('Total audio data received:', pcmBuffer.length, 'bytes');
 
 		// Convert PCM to WAV
 		const wavBuffer = pcmToWav(pcmBuffer, 24000, 16, 1);
@@ -281,9 +281,9 @@ export class XaiTTSHandler {
 		}
 
 		// Save the WAV file
-		writeFile(finalPath, wavBuffer)
+		writeDesktopFile(finalPath, wavBuffer)
 			.then(() => {
-				console.log('xAI TTS audio saved to:', finalPath);
+				console.debug('xAI TTS audio saved to:', finalPath);
 				new Notice('✅ Audio generated successfully with xAI TTS');
 				ws.close();
 				resolve();

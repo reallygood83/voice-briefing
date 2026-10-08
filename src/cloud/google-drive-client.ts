@@ -1,4 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
+import { readDesktopFile } from '../desktop/files';
 import { redactSecrets } from '../ai/extract-text';
 import { GoogleOAuthFlow } from './google-oauth-flow';
 import type { OAuthTokens } from './oauth-protocol';
@@ -44,7 +45,7 @@ export class GoogleDriveClient {
 		// Check if token is expired or about to expire
 		if (this.config.tokenExpiresAt && this.config.refreshToken && this.oauthFlow) {
 			if (this.oauthFlow.isTokenExpired(this.config.tokenExpiresAt)) {
-				console.log('Google Drive access token is due for refresh');
+				console.debug('Google Drive access token is due for refresh');
 				try {
 					const newTokens = await this.oauthFlow.refreshAccessToken(this.config.refreshToken);
 
@@ -73,9 +74,7 @@ export class GoogleDriveClient {
 			// Ensure we have a valid token before uploading
 			const accessToken = await this.ensureValidToken();
 
-			// Read file content
-			const fs = require('fs');
-			const fileContent = fs.readFileSync(filePath);
+			const fileContent = readDesktopFile(filePath);
 
 			// Step 1: Create file metadata
 			const metadata = {

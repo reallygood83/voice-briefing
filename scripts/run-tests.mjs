@@ -12,7 +12,13 @@ await build({
 	platform: 'node',
 	format: 'cjs',
 	outdir: 'tests-dist',
-	external: ['axios', 'obsidian', 'electron'],
+	external: ['axios', 'electron'],
+	alias: {
+		obsidian: './tests/shims/obsidian.js'
+	},
+	banner: {
+		js: 'if (typeof window === "undefined") { global.window = global; }'
+	},
 	logLevel: 'warning'
 });
 

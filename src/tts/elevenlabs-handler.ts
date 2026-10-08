@@ -1,5 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
-import { writeFile } from 'fs/promises';
+import { writeDesktopFile } from '../desktop/files';
 import { assertElevenLabsTextLength } from './elevenlabs-limits';
 import { redactSecrets } from '../ai/extract-text';
 import { DEFAULT_ELEVENLABS_MODEL } from '../models/catalog';
@@ -38,7 +38,7 @@ export class ElevenLabsHandler {
 				voice_settings: voiceSettings
 			};
 
-			console.log('ElevenLabs request:', {
+			console.debug('ElevenLabs request:', {
 				url: `${this.API_URL}/text-to-speech/${options.voiceId}`,
 				modelId,
 				textLength: options.text.length,
@@ -62,7 +62,7 @@ export class ElevenLabsHandler {
 			}
 
 			const buffer = Buffer.from(response.arrayBuffer);
-			await writeFile(options.outputPath, buffer);
+			await writeDesktopFile(options.outputPath, buffer);
 
 			new Notice('✅ Audio generated successfully with ElevenLabs');
 		} catch (error: any) {

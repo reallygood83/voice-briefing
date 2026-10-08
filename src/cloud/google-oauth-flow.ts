@@ -1,5 +1,4 @@
-import * as http from 'http';
-import * as url from 'url';
+import { Platform } from 'obsidian';
 import { redactSecrets } from '../ai/extract-text';
 import {
 	GOOGLE_DRIVE_SCOPES,
@@ -54,8 +53,21 @@ function defaultOpenExternal(target: string): void {
 	shell.openExternal(target);
 }
 
+interface LoopbackResponse {
+	writeHead(status: number, headers: Record<string, string>): void;
+	end(body?: string): void;
+}
+
+interface LoopbackServer {
+	closeAllConnections(): void;
+	close(): void;
+	listen(port: number, host: string, callback: () => void): void;
+	on(event: 'error', listener: (err: NodeJS.ErrnoException) => void): void;
+	address(): string | { port: number } | null;
+}
+
 export class GoogleOAuthFlow {
-	private server: http.Server | null = null;
+	private server: LoopbackServer | null = null;
 	private readonly deps: OAuthDependencies;
 
 	constructor(private config: OAuthConfig, deps: Partial<OAuthDependencies> = {}) {
@@ -73,30 +85,36 @@ export class GoogleOAuthFlow {
 	 * https://developers.google.com/identity/protocols/oauth2/native-app
 	 */
 	startOAuthFlow(): Promise<OAuthTokens> {
+		if (!Platform.isDesktop) {
+			return Promise.reject(new Error('Google Drive sign-in requires the desktop app.'));
+		}
+		const http = require('http') as {
+			createServer: (handler: (req: { url?: string }, res: LoopbackResponse) => void) => LoopbackServer;
+		};
 		const codeVerifier = generateCodeVerifier();
 		let redirectUri = '';
 		let settled = false;
-		let timer: NodeJS.Timeout;
+		let timer = 0;
 
 		return new Promise((resolve, reject) => {
 			const finish = (action: () => void) => {
 				if (settled) return;
 				settled = true;
-				clearTimeout(timer);
+				window.clearTimeout(timer);
 				this.cleanup();
 				action();
 			};
 
 			this.server = http.createServer((req, res) => {
-				const parsedUrl = url.parse(req.url || '', true);
-				if (parsedUrl.pathname !== '/callback') {
+				const callbackUrl = new URL(req.url || '/', 'http://127.0.0.1');
+				if (callbackUrl.pathname !== '/callback') {
 					res.writeHead(404, { 'Content-Type': 'text/plain' });
 					res.end('Not found');
 					return;
 				}
 
-				const error = firstQuery(parsedUrl.query.error);
-				const code = firstQuery(parsedUrl.query.code);
+				const error = callbackUrl.searchParams.get('error') || '';
+				const code = callbackUrl.searchParams.get('code') || '';
 
 				if (error) {
 					const safeError = redactSecrets(error);
@@ -155,7 +173,7 @@ export class GoogleOAuthFlow {
 				})();
 			});
 
-			timer = setTimeout(() => {
+			timer = window.setTimeout(() => {
 				finish(() => reject(new Error('OAuth flow timed out. Please try again.')));
 			}, this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 		});
@@ -229,10 +247,4 @@ export class GoogleOAuthFlow {
 <html><head><meta charset="UTF-8"><title>Connection Failed</title></head>
 <body><h1>Connection failed</h1><p>${safeError}</p></body></html>`;
 	}
-}
-
-function firstQuery(value: unknown): string {
-	if (typeof value === 'string') return value;
-	if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
-	return '';
 }

@@ -1,5 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
-import { writeFile } from 'fs/promises';
+import { writeDesktopFile } from '../desktop/files';
 import { audioBytesToWav, pcmDurationSeconds } from '../audio/wav';
 import { redactSecrets } from '../ai/extract-text';
 import { DEFAULT_GEMINI_TTS_MODEL } from '../models/catalog';
@@ -83,9 +83,9 @@ export class GeminiTTSHandler {
 			const modelId = options.modelId || DEFAULT_GEMINI_TTS_MODEL;
 			const apiUrl = `${this.API_BASE}/${modelId}:generateContent`;
 
-			console.log(`Gemini TTS: Input text ${options.text.length} chars`);
-			console.log(`Gemini TTS: Model=${modelId}, Voice=${voiceName}`);
-			console.log(`Gemini TTS: Script preview: "${options.text.substring(0, 100)}..."`);
+			console.debug(`Gemini TTS: Input text ${options.text.length} chars`);
+			console.debug(`Gemini TTS: Model=${modelId}, Voice=${voiceName}`);
+			console.debug(`Gemini TTS: Script preview: "${options.text.substring(0, 100)}..."`);
 
 			const requestBody = {
 				contents: [{
@@ -134,15 +134,15 @@ export class GeminiTTSHandler {
 			const wavBuffer = audioBytesToWav(audioBytes);
 			const pcmBytes = Math.max(0, wavBuffer.length - 44);
 			const audioDurationSec = Math.round(pcmDurationSeconds(pcmBytes));
-			console.log(`Gemini TTS: ${audioBytes.length} audio bytes, mime=${mimeType || 'unspecified'}, ~${audioDurationSec}s`);
+			console.debug(`Gemini TTS: ${audioBytes.length} audio bytes, mime=${mimeType || 'unspecified'}, ~${audioDurationSec}s`);
 
 			let outputPath = options.outputPath;
 			if (outputPath.endsWith('.mp3')) {
 				outputPath = outputPath.replace('.mp3', '.wav');
 			}
 
-			await writeFile(outputPath, wavBuffer);
-			console.log(`Gemini TTS: Saved ${wavBuffer.length} bytes WAV to ${outputPath}`);
+			await writeDesktopFile(outputPath, wavBuffer);
+			console.debug(`Gemini TTS: Saved ${wavBuffer.length} bytes WAV to ${outputPath}`);
 			new Notice(`✅ Audio generated (~${audioDurationSec}s)`);
 		} catch (error: any) {
 			const safeMessage = redactSecrets(error?.message || 'Unknown error');

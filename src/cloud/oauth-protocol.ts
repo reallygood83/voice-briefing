@@ -1,5 +1,3 @@
-import { createHash, randomBytes, webcrypto } from 'crypto';
-
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_DRIVE_SCOPES = [
@@ -15,18 +13,19 @@ export interface OAuthTokens {
 }
 
 export function generateCodeVerifier(): string {
-	return base64UrlEncode(randomBytes(32));
+	const bytes = new Uint8Array(32);
+	crypto.getRandomValues(bytes);
+	return base64UrlEncode(bytes);
 }
 
-export function generateCodeChallenge(verifier: string): string {
-	const digest = createHash('sha256').update(verifier).digest();
-	return base64UrlEncode(digest);
+/** SHA-256 PKCE challenge via Web Crypto, available in Obsidian and Node. */
+export async function generateCodeChallenge(verifier: string): Promise<string> {
+	const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+	return base64UrlEncode(new Uint8Array(hash));
 }
 
-/** Web Crypto path used by the desktop flow. Tests can compare it with the hash helper. */
 export async function generateCodeChallengeWeb(verifier: string): Promise<string> {
-	const hash = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-	return base64UrlEncode(Buffer.from(hash));
+	return generateCodeChallenge(verifier);
 }
 
 export function base64UrlEncode(buffer: Uint8Array): string {

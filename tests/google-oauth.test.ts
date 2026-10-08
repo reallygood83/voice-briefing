@@ -25,9 +25,9 @@ function get(url: string): Promise<string> {
 }
 
 describe('OAuth protocol', () => {
-	it('builds a loopback PKCE URL without the client secret', () => {
+	it('builds a loopback PKCE URL without the client secret', async () => {
 		const verifier = generateCodeVerifier();
-		const challenge = generateCodeChallenge(verifier);
+		const challenge = await generateCodeChallenge(verifier);
 		const expected = base64UrlEncode(createHash('sha256').update(verifier).digest());
 		assert.equal(challenge, expected);
 

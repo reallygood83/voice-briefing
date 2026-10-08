@@ -12,6 +12,7 @@
  */
 
 import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal, requestUrl } from 'obsidian';
+import { ensureBriefingAudioPath } from './src/desktop/files';
 
 // Progress Modal for showing generation progress
 class ProgressModal extends Modal {
@@ -124,11 +125,13 @@ class ProgressModal extends Modal {
 		});
 
 		const percentage = Math.round((completedSteps / totalSteps) * 100);
+		this.progressBar.removeClass('is-complete');
 		this.progressBar.style.width = `${percentage}%`;
 		this.statusText.textContent = `${percentage}%`;
 	}
 
 	setProgress(percentage: number) {
+		this.progressBar.removeClass('is-complete');
 		this.progressBar.style.width = `${percentage}%`;
 		this.statusText.textContent = `${Math.round(percentage)}%`;
 	}
@@ -139,7 +142,8 @@ class ProgressModal extends Modal {
 
 	showSuccess(message: string) {
 		this.currentStepEl.textContent = message;
-		this.progressBar.style.width = '100%';
+		this.progressBar.style.removeProperty('width');
+		this.progressBar.addClass('is-complete');
 		this.statusText.textContent = '100%';
 	}
 
@@ -400,7 +404,7 @@ class QuickOptionsModal extends Modal {
 			});
 
 			const hintEl = container.createDiv({ cls: 'voice-briefing-hint' });
-			hintEl.createEl('span', {
+			hintEl.createSpan({
 				text: '💡 Leave empty to use default prompt from settings',
 				cls: 'voice-briefing-hint-text'
 			});
@@ -465,8 +469,7 @@ class QuickOptionsModal extends Modal {
 		arrow.textContent = '▼';
 
 		// Options list (hidden by default)
-		const optionsList = wrapper.createDiv({ cls: 'voice-briefing-dropdown-options' });
-		optionsList.style.display = 'none';
+		const optionsList = wrapper.createDiv({ cls: 'voice-briefing-dropdown-options is-closed' });
 
 		// Group options if they have groups
 		const groups = new Map<string, { value: string; label: string }[]>();
@@ -512,7 +515,7 @@ class QuickOptionsModal extends Modal {
 		const toggleDropdown = (e: Event) => {
 			e.stopPropagation();
 			isOpen = !isOpen;
-			optionsList.style.display = isOpen ? 'block' : 'none';
+			optionsList.toggleClass('is-closed', !isOpen);
 			wrapper.classList.toggle('open', isOpen);
 		};
 
@@ -534,7 +537,7 @@ class QuickOptionsModal extends Modal {
 
 				// Close dropdown
 				isOpen = false;
-				optionsList.style.display = 'none';
+				optionsList.addClass('is-closed');
 				wrapper.classList.remove('open');
 
 				// Trigger change callback
@@ -546,7 +549,7 @@ class QuickOptionsModal extends Modal {
 		const closeDropdown = (e: Event) => {
 			if (!wrapper.contains(e.target as Node)) {
 				isOpen = false;
-				optionsList.style.display = 'none';
+				optionsList.addClass('is-closed');
 				wrapper.classList.remove('open');
 			}
 		};
@@ -695,14 +698,14 @@ export default class VoiceBriefingPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Add ribbon icon
-		this.addRibbonIcon('mic', 'Generate Voice Briefing', async () => {
+		this.addRibbonIcon('mic', 'Generate briefing', async () => {
 			await this.generateVoiceBriefing();
 		});
 
 		// Add command
 		this.addCommand({
-			id: 'generate-voice-briefing',
-			name: 'Generate Voice Briefing',
+			id: 'generate-briefing',
+			name: 'Generate briefing',
 			callback: async () => {
 				await this.generateVoiceBriefing();
 			}
@@ -711,7 +714,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 		// Add settings tab
 		this.addSettingTab(new VoiceBriefingSettingTab(this.app, this));
 
-		console.log('Voice Briefing Plugin loaded');
+		console.debug('Voice Briefing Plugin loaded');
 	}
 
 	async generateVoiceBriefing() {
@@ -814,18 +817,8 @@ export default class VoiceBriefingPlugin extends Plugin {
 			// Note: Gemini TTS outputs .wav, Edge/ElevenLabs output .mp3
 			const audioExtension = options.ttsEngine === 'gemini' || options.ttsEngine === 'xai' ? 'wav' : 'mp3';
 			const audioFileName = `${activeFile.basename}-briefing.${audioExtension}`;
-			const fs = require('fs');
-			const path = require('path');
-
-			// Get vault's absolute base path
 			const vaultBasePath = (this.app.vault.adapter as any).basePath;
-			const audioDir = path.join(vaultBasePath, this.app.vault.configDir, 'voice-briefings');
-			const audioPath = path.join(audioDir, audioFileName);
-
-			// Ensure directory exists
-			if (!fs.existsSync(audioDir)) {
-				fs.mkdirSync(audioDir, { recursive: true });
-			}
+			const audioPath = ensureBriefingAudioPath(vaultBasePath, this.app.vault.configDir, audioFileName);
 
 			const ttsResult = await ttsGenerator.generate({
 				engine: options.ttsEngine,
@@ -915,13 +908,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 `;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
-					console.log('Audio embed created with fileId:', uploadResult.fileId);
-					console.log('Embed URL:', driveEmbedUrl);
+					console.debug('Audio embed created with fileId:', uploadResult.fileId);
+					console.debug('Embed URL:', driveEmbedUrl);
 				} else {
 					// Fallback to local file
 					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');
 					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*⚠️ Cloud upload failed - audio stored locally only*\n`;
-					console.log('Fallback to local file embed');
+					console.debug('Fallback to local file embed');
 				}
 			} else {
 				// Local file only
@@ -931,9 +924,9 @@ export default class VoiceBriefingPlugin extends Plugin {
 			// Step 4: Embed audio in note (right after YAML frontmatter/properties)
 			progressModal.setStep('embed', 'active', 'Embedding audio in note...');
 
-			console.log('Attempting to embed audio in note...');
-			console.log('Current content length:', content.length);
-			console.log('Audio embed to add:', audioEmbed);
+			console.debug('Attempting to embed audio in note...');
+			console.debug('Current content length:', content.length);
+			console.debug('Audio embed to add:', audioEmbed);
 
 			// Find the position right after YAML frontmatter (properties)
 			// YAML frontmatter starts with --- and ends with ---
@@ -947,17 +940,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const beforeEmbed = content.substring(0, frontmatterEnd);
 				const afterEmbed = content.substring(frontmatterEnd);
 				newContent = beforeEmbed + audioEmbed + '\n' + afterEmbed;
-				console.log('Inserted audio embed after YAML frontmatter');
+				console.debug('Inserted audio embed after YAML frontmatter');
 			} else {
 				// No frontmatter found, insert at the beginning
 				newContent = audioEmbed + '\n' + content;
-				console.log('No frontmatter found, inserted at beginning');
+				console.debug('No frontmatter found, inserted at beginning');
 			}
 
-			console.log('New content length:', newContent.length);
+			console.debug('New content length:', newContent.length);
 
 			await this.app.vault.modify(activeFile, newContent);
-			console.log('Note modified successfully');
+			console.debug('Note modified successfully');
 
 			progressModal.setStep('embed', 'completed', 'Audio embedded in note');
 
@@ -965,7 +958,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 			progressModal.showSuccess('✅ Voice briefing generated successfully!');
 
 			// Auto-close modal after 2 seconds
-			setTimeout(() => {
+			window.setTimeout(() => {
 				progressModal.close();
 			}, 2000);
 
@@ -981,7 +974,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 	}
 
 	onunload() {
-		console.log('Voice Briefing Plugin unloaded');
+		console.debug('Voice Briefing Plugin unloaded');
 	}
 
 	async loadSettings() {
@@ -989,7 +982,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 		const changes = migrateModelSettings(merged);
 		this.settings = merged;
 		if (changes.length > 0) {
-			console.log(`Voice Briefing migrated saved models: ${changes.join('; ')}`);
+			console.debug(`Voice Briefing migrated saved models: ${changes.join('; ')}`);
 			await this.saveSettings();
 		}
 	}
@@ -1046,12 +1039,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		// Header
-		containerEl.createEl('h1', { text: 'Voice Briefing Settings' });
-
-		// ====================
-		// GENERAL SETTINGS
-		// ====================
-		containerEl.createEl('h2', { text: '🌐 General Settings' });
+		new Setting(containerEl).setName('Language and length').setHeading();
 
 		// Language Setting
 		new Setting(containerEl)
@@ -1106,7 +1094,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		// ====================
 		// AI PROVIDER SETTINGS
 		// ====================
-		containerEl.createEl('h2', { text: '🤖 AI Provider Settings' });
+		new Setting(containerEl).setName('AI provider').setHeading();
 
 		new Setting(containerEl)
 			.setName('AI Provider')
@@ -1222,7 +1210,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		// ====================
 		// TTS SETTINGS
 		// ====================
-		containerEl.createEl('h2', { text: '🔊 Text-to-Speech Settings' });
+		new Setting(containerEl).setName('Text to speech').setHeading();
 
 		new Setting(containerEl)
 			.setName('Default TTS Engine')
@@ -1458,7 +1446,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}));
 
-			containerEl.createEl('h3', { text: '🎚️ Voice Characteristics' });
+			new Setting(containerEl).setName('Voice characteristics').setHeading();
 
 			// Template Selector
 			new Setting(containerEl)
@@ -1566,7 +1554,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		// ====================
 		// CLOUD SHARING SETTINGS
 		// ====================
-		containerEl.createEl('h2', { text: '☁️ Cloud Sharing' });
+		new Setting(containerEl).setName('Cloud sharing').setHeading();
 
 		new Setting(containerEl)
 			.setName('Enable Cloud Sharing')
@@ -1581,7 +1569,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 
 		if (this.plugin.settings.cloudSharingEnabled) {
 			// Google Cloud Credentials Section
-			containerEl.createEl('h3', { text: '🔑 Google Cloud Credentials' });
+			new Setting(containerEl).setName('Google Cloud credentials').setHeading();
 
 			const credentialsInfo = containerEl.createDiv('voice-briefing-info');
 			credentialsInfo.createEl('p', {
@@ -1626,7 +1614,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				});
 
 			// Connection Section
-			containerEl.createEl('h3', { text: '🔗 Connection Status' });
+			new Setting(containerEl).setName('Connection status').setHeading();
 
 			const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
 

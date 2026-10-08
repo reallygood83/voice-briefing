@@ -114,6 +114,10 @@
 	position: relative;
 }
 
+.voice-briefing-progress-bar.is-complete {
+	width: 100%;
+}
+
 .voice-briefing-progress-bar::after {
 	content: '';
 	position: absolute;
@@ -570,6 +574,10 @@
 }
 
 /* Options list container */
+.voice-briefing-dropdown-options.is-closed {
+	display: none;
+}
+
 .voice-briefing-dropdown-options {
 	position: absolute;
 	top: calc(100% + 4px);

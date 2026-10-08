@@ -1,5 +1,5 @@
 import { Notice, requestUrl } from 'obsidian';
-import { writeFile } from 'fs/promises';
+import { writeDesktopFile } from '../desktop/files';
 import { redactSecrets } from '../ai/extract-text';
 import { DEFAULT_OPENAI_TTS_MODEL, DEFAULT_OPENAI_TTS_VOICE } from '../models/catalog';
 
@@ -46,7 +46,7 @@ export class OpenAiTTSHandler {
 				throw new Error(this.parseError(response.status, response.json));
 			}
 
-			await writeFile(options.outputPath, Buffer.from(response.arrayBuffer));
+			await writeDesktopFile(options.outputPath, Buffer.from(response.arrayBuffer));
 			new Notice('✅ Audio generated successfully with OpenAI TTS');
 		} catch (error: any) {
 			const safeMessage = redactSecrets(error?.message || 'Unknown error');
