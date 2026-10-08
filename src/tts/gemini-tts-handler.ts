@@ -2,6 +2,7 @@ import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
 import { audioBytesToWav, pcmDurationSeconds } from '../audio/wav';
 import { redactSecrets } from '../ai/extract-text';
+import { DEFAULT_GEMINI_TTS_MODEL } from '../models/catalog';
 
 export interface GeminiTTSOptions {
 	apiKey: string;
@@ -79,7 +80,7 @@ export class GeminiTTSHandler {
 	async generate(options: GeminiTTSOptions): Promise<void> {
 		try {
 			const voiceName = options.voiceName || 'Kore';
-			const modelId = options.modelId || 'gemini-2.5-flash-preview-tts';
+			const modelId = options.modelId || DEFAULT_GEMINI_TTS_MODEL;
 			const apiUrl = `${this.API_BASE}/${modelId}:generateContent`;
 
 			console.log(`Gemini TTS: Input text ${options.text.length} chars`);

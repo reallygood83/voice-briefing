@@ -156,6 +156,26 @@ class ProgressModal extends Modal {
 // Import Gemini TTS voices and languages
 import { GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './src/tts/gemini-tts-handler';
 import { XAI_TTS_VOICES } from './src/tts/xai-tts-handler';
+import {
+	ANTHROPIC_TEXT_MODELS,
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_ELEVENLABS_MODEL,
+	DEFAULT_GEMINI_TEXT_MODEL,
+	DEFAULT_GEMINI_TTS_MODEL,
+	DEFAULT_OPENAI_TEXT_MODEL,
+	DEFAULT_OPENAI_TTS_MODEL,
+	DEFAULT_OPENAI_TTS_VOICE,
+	DEFAULT_XAI_TEXT_MODEL,
+	ELEVENLABS_MODELS,
+	GEMINI_TEXT_MODELS,
+	GEMINI_TTS_MODELS,
+	OPENAI_TEXT_MODELS,
+	OPENAI_TTS_MODELS,
+	OPENAI_TTS_VOICES,
+	XAI_TEXT_MODELS,
+	type ModelOption
+} from './src/models/catalog';
+import { migrateModelSettings } from './src/settings/migrate-settings';
 
 // Quick Options Modal - Neo-Brutalism Style
 class QuickOptionsModal extends Modal {
@@ -196,13 +216,14 @@ class QuickOptionsModal extends Modal {
 		this.createSection(formEl, '🔊 TTS Engine', (container) => {
 			const engines = [
 				{ value: 'gemini', label: '🤖 Gemini TTS (Recommended)' },
+				{ value: 'openai', label: '🟢 OpenAI TTS' },
 				{ value: 'xai', label: '🚀 xAI Grok TTS (Premium)' },
 				{ value: 'edge', label: '🔷 Edge TTS (Free)' },
 				{ value: 'elevenlabs', label: '🟣 ElevenLabs (Premium)' }
 			];
 
 			this.createCustomDropdown(container, engines, this.currentOptions.ttsEngine, (value) => {
-				this.currentOptions.ttsEngine = value as 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+				this.currentOptions.ttsEngine = value as 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 				this.refreshForm();
 			});
 		});
@@ -333,7 +354,15 @@ class QuickOptionsModal extends Modal {
 		if (this.currentOptions.ttsEngine === 'elevenlabs') {
 			const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
 			noteEl.createEl('p', {
-				text: '💡 ElevenLabs uses settings from Plugin Settings page.',
+				text: `💡 ElevenLabs uses the voice and model (${this.settings.elevenLabsModelId || DEFAULT_ELEVENLABS_MODEL}) from Plugin Settings.`,
+				cls: 'voice-briefing-note-text'
+			});
+		}
+
+		if (this.currentOptions.ttsEngine === 'openai') {
+			const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
+			noteEl.createEl('p', {
+				text: `💡 OpenAI TTS uses ${this.settings.openaiTtsModel || DEFAULT_OPENAI_TTS_MODEL} / ${this.settings.openaiTtsVoice || DEFAULT_OPENAI_TTS_VOICE} from Plugin Settings.`,
 				cls: 'voice-briefing-note-text'
 			});
 		}
@@ -565,10 +594,11 @@ interface VoiceBriefingSettings {
 	modelName?: string;
 
 	// TTS Settings
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 	edgeVoice: string;
 	elevenLabsApiKey: string;
 	elevenLabsVoiceId: string;
+	elevenLabsModelId: string;
 	elevenLabsStability: number;
 	elevenLabsSimilarityBoost: number;
 	elevenLabsStyle: number;
@@ -577,6 +607,11 @@ interface VoiceBriefingSettings {
 	// Gemini TTS Settings
 	geminiTtsVoice: string;
 	geminiTtsLanguage: string;
+	geminiTtsModel: string;
+
+	// OpenAI TTS Settings
+	openaiTtsModel: string;
+	openaiTtsVoice: string;
 
 	// xAI TTS Settings
 	xaiTtsVoice: string;
@@ -595,7 +630,7 @@ interface VoiceBriefingSettings {
 
 // Quick Options interface for modal
 interface QuickOptions {
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 	geminiVoice: string;
 	geminiLanguage: string;
 	edgeVoice: string;
@@ -617,15 +652,16 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	anthropicApiKey: '',
 
 	// Provider-specific Models
-	geminiModel: 'gemini-2.0-flash',
-	xaiModel: 'grok-4-1-fast',
-	openaiModel: 'gpt-4o',
-	anthropicModel: 'claude-3-5-sonnet-20241022',
+	geminiModel: DEFAULT_GEMINI_TEXT_MODEL,
+	xaiModel: DEFAULT_XAI_TEXT_MODEL,
+	openaiModel: DEFAULT_OPENAI_TEXT_MODEL,
+	anthropicModel: DEFAULT_ANTHROPIC_TEXT_MODEL,
 
 	ttsEngine: 'gemini',
 	edgeVoice: 'ko-KR-SunHiNeural',
 	elevenLabsApiKey: '',
 	elevenLabsVoiceId: '',
+	elevenLabsModelId: DEFAULT_ELEVENLABS_MODEL,
 	elevenLabsStability: 0.5,
 	elevenLabsSimilarityBoost: 0.75,
 	elevenLabsStyle: 0.0,
@@ -634,6 +670,9 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	// Gemini TTS defaults
 	geminiTtsVoice: 'Kore',
 	geminiTtsLanguage: 'auto',
+	geminiTtsModel: DEFAULT_GEMINI_TTS_MODEL,
+	openaiTtsModel: DEFAULT_OPENAI_TTS_MODEL,
+	openaiTtsVoice: DEFAULT_OPENAI_TTS_VOICE,
 
 	// xAI TTS defaults
 	xaiTtsVoice: 'Sal',
@@ -710,6 +749,11 @@ export default class VoiceBriefingPlugin extends Plugin {
 			}
 		}
 
+		if (options.ttsEngine === 'openai' && !this.settings.openaiApiKey) {
+			new Notice('Please set your OpenAI API key in settings');
+			return;
+		}
+
 		if (options.ttsEngine === 'gemini') {
 			if (!this.settings.geminiApiKey) {
 				new Notice('Please set your Gemini API key in settings (same as AI Provider)');
@@ -753,9 +797,14 @@ export default class VoiceBriefingPlugin extends Plugin {
 			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
 
 			// Step 2: Convert script to audio with TTS
-			const ttsEngineLabel = options.ttsEngine === 'edge' ? 'Edge TTS' :
-				options.ttsEngine === 'gemini' ? 'Gemini TTS' :
-				options.ttsEngine === 'xai' ? 'xAI TTS' : 'ElevenLabs';
+			const ttsEngineLabels: Record<QuickOptions['ttsEngine'], string> = {
+				edge: 'Edge TTS',
+				gemini: 'Gemini TTS',
+				xai: 'xAI TTS',
+				openai: 'OpenAI TTS',
+				elevenlabs: 'ElevenLabs'
+			};
+			const ttsEngineLabel = ttsEngineLabels[options.ttsEngine];
 			progressModal.setStep('audio', 'active', `Converting to audio with ${ttsEngineLabel}...`);
 
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
@@ -763,7 +812,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 
 			// Prepare audio file path with ABSOLUTE path
 			// Note: Gemini TTS outputs .wav, Edge/ElevenLabs output .mp3
-			const audioExtension = options.ttsEngine === 'gemini' ? 'wav' : 'mp3';
+			const audioExtension = options.ttsEngine === 'gemini' || options.ttsEngine === 'xai' ? 'wav' : 'mp3';
 			const audioFileName = `${activeFile.basename}-briefing.${audioExtension}`;
 			const fs = require('fs');
 			const path = require('path');
@@ -785,6 +834,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 				edgeVoice: options.edgeVoice,
 				elevenLabsApiKey: this.settings.elevenLabsApiKey,
 				elevenLabsVoiceId: this.settings.elevenLabsVoiceId,
+				elevenLabsModelId: this.settings.elevenLabsModelId,
 				elevenLabsStability: this.settings.elevenLabsStability,
 				elevenLabsSimilarityBoost: this.settings.elevenLabsSimilarityBoost,
 				elevenLabsStyle: this.settings.elevenLabsStyle,
@@ -793,9 +843,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 					geminiApiKey: this.settings.geminiApiKey,
 					geminiVoice: options.geminiVoice,
 					geminiLanguage: options.geminiLanguage,
+					geminiModel: this.settings.geminiTtsModel,
 					// xAI TTS options
 				xaiApiKey: this.settings.xaiApiKey,
-				xaiVoice: options.xaiVoice
+				xaiVoice: options.xaiVoice,
+				openaiApiKey: this.settings.openaiApiKey,
+				openaiTtsModel: this.settings.openaiTtsModel,
+				openaiTtsVoice: this.settings.openaiTtsVoice
 			});
 
 			if (!ttsResult.success) {
@@ -931,7 +985,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const merged = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const changes = migrateModelSettings(merged);
+		this.settings = merged;
+		if (changes.length > 0) {
+			console.log(`Voice Briefing migrated saved models: ${changes.join('; ')}`);
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings() {
@@ -968,7 +1028,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 			case 'anthropic':
 				return this.settings.anthropicModel;
 			default:
-				return 'gemini-2.0-flash';
+				return DEFAULT_GEMINI_TEXT_MODEL;
 		}
 	}
 }
@@ -1132,55 +1192,31 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 
 		// Model Settings (Conditional based on selected provider)
 		if (this.plugin.settings.aiProvider === 'gemini') {
-			new Setting(containerEl)
-				.setName('Gemini Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('gemini-2.0-flash')
-					.setValue(this.plugin.settings.geminiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.geminiModel = value || 'gemini-2.0-flash';
-						await this.plugin.saveSettings();
-					}));
+			this.addModelPicker(containerEl, 'Gemini model', 'Script model. A custom ID overrides the list.', GEMINI_TEXT_MODELS, this.plugin.settings.geminiModel, async (modelId) => {
+				this.plugin.settings.geminiModel = modelId;
+				await this.plugin.saveSettings();
+			});
 		}
 
 		if (this.plugin.settings.aiProvider === 'xai') {
-			new Setting(containerEl)
-				.setName('xAI Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('grok-4-1-fast')
-					.setValue(this.plugin.settings.xaiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.xaiModel = value || 'grok-4-1-fast';
-						await this.plugin.saveSettings();
-					}));
+			this.addModelPicker(containerEl, 'xAI model', 'Script model. A custom ID overrides the list.', XAI_TEXT_MODELS, this.plugin.settings.xaiModel, async (modelId) => {
+				this.plugin.settings.xaiModel = modelId;
+				await this.plugin.saveSettings();
+			});
 		}
 
 		if (this.plugin.settings.aiProvider === 'openai') {
-			new Setting(containerEl)
-				.setName('OpenAI Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('gpt-4o')
-					.setValue(this.plugin.settings.openaiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.openaiModel = value || 'gpt-4o';
-						await this.plugin.saveSettings();
-					}));
+			this.addModelPicker(containerEl, 'OpenAI model', 'Script model. GPT-6 ids use the Responses API. A custom ID overrides the list.', OPENAI_TEXT_MODELS, this.plugin.settings.openaiModel, async (modelId) => {
+				this.plugin.settings.openaiModel = modelId;
+				await this.plugin.saveSettings();
+			});
 		}
 
 		if (this.plugin.settings.aiProvider === 'anthropic') {
-			new Setting(containerEl)
-				.setName('Anthropic Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('claude-3-5-sonnet-20241022')
-					.setValue(this.plugin.settings.anthropicModel)
-					.onChange(async (value) => {
-						this.plugin.settings.anthropicModel = value || 'claude-3-5-sonnet-20241022';
-						await this.plugin.saveSettings();
-					}));
+			this.addModelPicker(containerEl, 'Anthropic model', 'Script model. A custom ID overrides the list.', ANTHROPIC_TEXT_MODELS, this.plugin.settings.anthropicModel, async (modelId) => {
+				this.plugin.settings.anthropicModel = modelId;
+				await this.plugin.saveSettings();
+			});
 		}
 
 		// ====================
@@ -1193,6 +1229,7 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 			.setDesc('Choose the default TTS engine (can be changed per-generation in Quick Options)')
 			.addDropdown(dropdown => dropdown
 				.addOption('gemini', '🤖 Gemini TTS (Recommended)')
+				.addOption('openai', '🟢 OpenAI TTS')
 				.addOption('xai', '🚀 xAI Grok TTS (Premium)')
 				.addOption('edge', '🔷 Edge TTS (Free)')
 				.addOption('elevenlabs', '🟣 ElevenLabs (Premium)')
@@ -1229,6 +1266,11 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 
 		// Gemini TTS Voice Settings
 		if (this.plugin.settings.ttsEngine === 'gemini') {
+			this.addModelPicker(containerEl, 'Gemini TTS model', 'Speech model. A custom ID overrides the list.', GEMINI_TTS_MODELS, this.plugin.settings.geminiTtsModel, async (modelId) => {
+				this.plugin.settings.geminiTtsModel = modelId;
+				await this.plugin.saveSettings();
+			});
+
 			new Setting(containerEl)
 				.setName('Default Gemini Voice')
 				.setDesc('Select default voice (grouped by gender) - 30 voice options')
@@ -1366,7 +1408,45 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 		}
 
 		// ElevenLabs Voice Settings
+		if (this.plugin.settings.ttsEngine === 'openai') {
+			this.addModelPicker(containerEl, 'OpenAI TTS model', 'Speech model. A custom ID overrides the list.', OPENAI_TTS_MODELS, this.plugin.settings.openaiTtsModel, async (modelId) => {
+				this.plugin.settings.openaiTtsModel = modelId;
+				await this.plugin.saveSettings();
+			});
+
+			new Setting(containerEl)
+				.setName('OpenAI TTS voice')
+				.setDesc('Built-in speech voice. Type another voice id below if the list does not include it.')
+				.addDropdown(dropdown => {
+					OPENAI_TTS_VOICES.forEach((voice) => dropdown.addOption(voice.id, voice.label));
+					const known = OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice);
+					return dropdown
+						.setValue(known ? this.plugin.settings.openaiTtsVoice : DEFAULT_OPENAI_TTS_VOICE)
+						.onChange(async (value) => {
+							this.plugin.settings.openaiTtsVoice = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
+			new Setting(containerEl)
+				.setName('OpenAI TTS voice — custom ID')
+				.setDesc('Leave empty to use the voice selected above.')
+				.addText(text => text
+					.setPlaceholder('coral')
+					.setValue(OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice) ? '' : this.plugin.settings.openaiTtsVoice)
+					.onChange(async (value) => {
+						if (!value.trim()) return;
+						this.plugin.settings.openaiTtsVoice = value.trim();
+						await this.plugin.saveSettings();
+					}));
+		}
+
 		if (this.plugin.settings.ttsEngine === 'elevenlabs') {
+			this.addModelPicker(containerEl, 'ElevenLabs model', 'v4 is the current recommended model. A custom ID overrides the list.', ELEVENLABS_MODELS, this.plugin.settings.elevenLabsModelId, async (modelId) => {
+				this.plugin.settings.elevenLabsModelId = modelId;
+				await this.plugin.saveSettings();
+			});
+
 			new Setting(containerEl)
 				.setName('ElevenLabs Voice ID')
 				.setDesc('Enter your ElevenLabs voice ID')
@@ -1737,7 +1817,7 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
 			case 'anthropic':
 				return this.plugin.settings.anthropicModel;
 			default:
-				return 'gemini-2.0-flash';
+				return DEFAULT_GEMINI_TEXT_MODEL;
 		}
 	}
 
@@ -1760,6 +1840,52 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
 			this.plugin.settings.edgeVoice = voiceMap[language] || voiceMap['en-US'];
 			this.plugin.saveSettings();
 		}
+	}
+
+	private addModelPicker(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		models: ModelOption[],
+		current: string,
+		apply: (modelId: string) => Promise<void>
+	): void {
+		const known = models.some((model) => model.id === current);
+		let selected = known ? current : (models[0]?.id || '');
+		let custom = known ? '' : current;
+
+		const save = async () => {
+			const next = custom.trim() || selected;
+			if (!next) return;
+			await apply(next);
+		};
+
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addDropdown((dropdown) => {
+				models.forEach((model) => dropdown.addOption(model.id, model.label));
+				if (!known && current) dropdown.addOption(current, `${current} (saved)`);
+				return dropdown
+					.setValue(known ? selected : (current || selected))
+					.onChange(async (value) => {
+						selected = value;
+						custom = '';
+						await save();
+						this.display();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName(`${name} — custom ID`)
+			.setDesc('Type a model ID to override the dropdown. Leave empty to use the list.')
+			.addText((text) => text
+				.setPlaceholder(models[0]?.id || 'model-id')
+				.setValue(custom)
+				.onChange(async (value) => {
+					custom = value;
+					await save();
+				}));
 	}
 
 	addEdgeVoiceOptions(dropdown: any): void {

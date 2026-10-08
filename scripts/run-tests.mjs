@@ -3,7 +3,10 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 
 await build({
-	entryPoints: ['tests/briefing-audio.test.ts'],
+	entryPoints: [
+		'tests/briefing-audio.test.ts',
+		'tests/model-migration.test.ts'
+	],
 	bundle: true,
 	platform: 'node',
 	format: 'cjs',

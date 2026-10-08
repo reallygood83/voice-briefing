@@ -3,9 +3,10 @@ import { EdgeTTSHandler } from './edge-tts-handler';
 import { ElevenLabsHandler } from './elevenlabs-handler';
 import { GeminiTTSHandler, GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './gemini-tts-handler';
 import { XaiTTSHandler, XAI_TTS_VOICES } from './xai-tts-handler';
+import { OpenAiTTSHandler } from './openai-tts-handler';
 
 export interface TTSGenerationOptions {
-	engine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+	engine: 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 	text: string;
 	outputPath: string;
 
@@ -30,6 +31,11 @@ export interface TTSGenerationOptions {
 	// xAI TTS options
 	xaiApiKey?: string;
 	xaiVoice?: string;
+
+	// OpenAI TTS options
+	openaiApiKey?: string;
+	openaiTtsModel?: string;
+	openaiTtsVoice?: string;
 }
 
 export interface TTSGenerationResult {
@@ -44,12 +50,14 @@ export class TTSGenerator {
 	private elevenLabsHandler: ElevenLabsHandler;
 	private geminiHandler: GeminiTTSHandler;
 	private xaiHandler: XaiTTSHandler;
+	private openaiHandler: OpenAiTTSHandler;
 
 	constructor() {
 		this.edgeHandler = new EdgeTTSHandler();
 		this.elevenLabsHandler = new ElevenLabsHandler();
 		this.geminiHandler = new GeminiTTSHandler();
 		this.xaiHandler = new XaiTTSHandler();
+		this.openaiHandler = new OpenAiTTSHandler();
 	}
 
 	async generate(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
@@ -60,6 +68,8 @@ export class TTSGenerator {
 				return await this.generateWithGeminiTTS(options);
 			} else if (options.engine === 'xai') {
 				return await this.generateWithXaiTTS(options);
+			} else if (options.engine === 'openai') {
+				return await this.generateWithOpenAI(options);
 			} else {
 				return await this.generateWithElevenLabs(options);
 			}
@@ -159,6 +169,30 @@ export class TTSGenerator {
 
 	getGeminiLanguages(): Array<{ code: string; label: string }> {
 		return this.geminiHandler.getLanguages();
+	}
+
+	private async generateWithOpenAI(options: TTSGenerationOptions): Promise<TTSGenerationResult> {
+		if (!options.openaiApiKey) {
+			throw new Error('OpenAI API key is required for OpenAI TTS');
+		}
+
+		let outputPath = options.outputPath;
+		if (outputPath.endsWith('.wav')) {
+			outputPath = outputPath.replace(/\.wav$/, '.mp3');
+		}
+
+		await this.openaiHandler.generate({
+			apiKey: options.openaiApiKey,
+			text: options.text,
+			outputPath,
+			modelId: options.openaiTtsModel,
+			voice: options.openaiTtsVoice
+		});
+
+		return {
+			success: true,
+			audioPath: outputPath
+		};
 	}
 
 	private async generateWithXaiTTS(options: TTSGenerationOptions): Promise<TTSGenerationResult> {

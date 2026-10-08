@@ -2,6 +2,7 @@ import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
 import { assertElevenLabsTextLength } from './elevenlabs-limits';
 import { redactSecrets } from '../ai/extract-text';
+import { DEFAULT_ELEVENLABS_MODEL } from '../models/catalog';
 
 interface VoiceSettings {
 	stability: number;
@@ -25,10 +26,10 @@ export class ElevenLabsHandler {
 	async generate(options: ElevenLabsOptions): Promise<void> {
 		this.validateOptions(options);
 
-		assertElevenLabsTextLength(options.text, options.modelId || 'eleven_multilingual_v2');
+		const modelId = options.modelId || DEFAULT_ELEVENLABS_MODEL;
+		assertElevenLabsTextLength(options.text, modelId);
 
 		try {
-			const modelId = options.modelId || 'eleven_multilingual_v2';
 			const voiceSettings = this.buildVoiceSettings(options.voiceSettings, modelId);
 
 			const requestBody = {
