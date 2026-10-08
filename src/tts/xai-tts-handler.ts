@@ -1,5 +1,7 @@
 import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
+import { pcmToWav } from '../audio/wav';
+import { redactSecrets } from '../ai/extract-text';
 
 export interface XaiTTSOptions {
 	apiKey: string;
@@ -52,7 +54,6 @@ export class XaiTTSHandler {
 			}
 
 			const data = response.json;
-			console.log('[xAI] Token response received:', JSON.stringify(data, null, 2));
 
 			let token = null;
 			// Try multiple possible response formats based on xAI API
@@ -76,7 +77,7 @@ export class XaiTTSHandler {
 			throw new Error(`Unexpected token response format. Response keys: ${keys}`);
 
 		} catch (error: any) {
-			console.error('[xAI] Failed to get ephemeral token:', error);
+			console.error('[xAI] Failed to get ephemeral token:', redactSecrets(error?.message || 'unknown error'));
 			if (error.message.includes('401')) {
 				throw new Error('Invalid xAI API key');
 			}
@@ -97,8 +98,7 @@ export class XaiTTSHandler {
 
 				// Create WebSocket connection using Native Browser API
 				// Authenticate via access_token query parameter (ephemeral token method)
-				const maskedToken = ephemeralToken.substring(0, 10) + '...';
-				console.log(`[xAI] Connecting to WebSocket: ${this.WS_URL}?model=${this.MODEL}&access_token=${maskedToken}`);
+						console.log(`[xAI] Connecting to WebSocket model=${this.MODEL}`);
 
 				// Re-add model parameter which is required
 				const wsUrl = `${this.WS_URL}?model=${this.MODEL}&access_token=${ephemeralToken}`;
@@ -272,7 +272,7 @@ export class XaiTTSHandler {
 		console.log('Total audio data received:', pcmBuffer.length, 'bytes');
 
 		// Convert PCM to WAV
-		const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
+		const wavBuffer = pcmToWav(pcmBuffer, 24000, 16, 1);
 
 		// Determine output path
 		let finalPath = outputPath;
@@ -292,45 +292,6 @@ export class XaiTTSHandler {
 				ws.close();
 				reject(new Error(`Failed to save audio: ${err.message}`));
 			});
-	}
-
-	/**
-	 * Convert raw PCM data to WAV format
-	 * xAI outputs: 24kHz, 16-bit, mono PCM
-	 */
-	private pcmToWav(pcmData: Buffer, sampleRate: number, bitsPerSample: number, channels: number): Buffer {
-		const byteRate = sampleRate * channels * (bitsPerSample / 8);
-		const blockAlign = channels * (bitsPerSample / 8);
-		const dataSize = pcmData.length;
-		const headerSize = 44;
-		const fileSize = headerSize + dataSize;
-
-		const wavBuffer = Buffer.alloc(fileSize);
-		let offset = 0;
-
-		// RIFF header
-		wavBuffer.write('RIFF', offset); offset += 4;
-		wavBuffer.writeUInt32LE(fileSize - 8, offset); offset += 4;
-		wavBuffer.write('WAVE', offset); offset += 4;
-
-		// fmt sub-chunk
-		wavBuffer.write('fmt ', offset); offset += 4;
-		wavBuffer.writeUInt32LE(16, offset); offset += 4; // Subchunk1Size (16 for PCM)
-		wavBuffer.writeUInt16LE(1, offset); offset += 2; // AudioFormat (1 for PCM)
-		wavBuffer.writeUInt16LE(channels, offset); offset += 2;
-		wavBuffer.writeUInt32LE(sampleRate, offset); offset += 4;
-		wavBuffer.writeUInt32LE(byteRate, offset); offset += 4;
-		wavBuffer.writeUInt16LE(blockAlign, offset); offset += 2;
-		wavBuffer.writeUInt16LE(bitsPerSample, offset); offset += 2;
-
-		// data sub-chunk
-		wavBuffer.write('data', offset); offset += 4;
-		wavBuffer.writeUInt32LE(dataSize, offset); offset += 4;
-
-		// Copy PCM data
-		pcmData.copy(wavBuffer, offset);
-
-		return wavBuffer;
 	}
 
 	/**

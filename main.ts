@@ -746,14 +746,16 @@ export default class VoiceBriefingPlugin extends Plugin {
 				customPrompt: effectiveCustomPrompt,
 				provider: this.settings.aiProvider,
 				apiKey: this.getCurrentApiKey(),
-				modelName: this.getCurrentModel()
+				modelName: this.getCurrentModel(),
+				onStatus: (message) => new Notice(message)
 			});
 
 			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
 
 			// Step 2: Convert script to audio with TTS
 			const ttsEngineLabel = options.ttsEngine === 'edge' ? 'Edge TTS' :
-				options.ttsEngine === 'gemini' ? 'Gemini TTS' : 'ElevenLabs';
+				options.ttsEngine === 'gemini' ? 'Gemini TTS' :
+				options.ttsEngine === 'xai' ? 'xAI TTS' : 'ElevenLabs';
 			progressModal.setStep('audio', 'active', `Converting to audio with ${ttsEngineLabel}...`);
 
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
@@ -824,7 +826,8 @@ export default class VoiceBriefingPlugin extends Plugin {
 					}
 				});
 
-				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
+				const audioMime = audioExtension === 'wav' ? 'audio/wav' : 'audio/mpeg';
+				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, audioMime);
 
 				if (uploadResult.success && uploadResult.fileId) {
 					// Google Drive audio embed - using the embed player URL format

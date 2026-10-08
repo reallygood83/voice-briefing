@@ -1,5 +1,7 @@
 import { Notice, requestUrl } from 'obsidian';
 import { writeFile } from 'fs/promises';
+import { audioBytesToWav, pcmDurationSeconds } from '../audio/wav';
+import { redactSecrets } from '../ai/extract-text';
 
 export interface GeminiTTSOptions {
 	apiKey: string;
@@ -126,11 +128,12 @@ export class GeminiTTSHandler {
 				throw new Error('No audio data in response');
 			}
 
-			const pcmBuffer = Buffer.from(audioData, 'base64');
-			const wavBuffer = this.pcmToWav(pcmBuffer, 24000, 16, 1);
-			
-			const audioDurationSec = Math.round(pcmBuffer.length / (24000 * 2));
-			console.log(`Gemini TTS: Generated ${pcmBuffer.length} bytes PCM (~${audioDurationSec}s audio)`);
+			const audioBytes = Buffer.from(audioData, 'base64');
+			const mimeType = responseData?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType as string | undefined;
+			const wavBuffer = audioBytesToWav(audioBytes);
+			const pcmBytes = Math.max(0, wavBuffer.length - 44);
+			const audioDurationSec = Math.round(pcmDurationSeconds(pcmBytes));
+			console.log(`Gemini TTS: ${audioBytes.length} audio bytes, mime=${mimeType || 'unspecified'}, ~${audioDurationSec}s`);
 
 			let outputPath = options.outputPath;
 			if (outputPath.endsWith('.mp3')) {
@@ -141,17 +144,21 @@ export class GeminiTTSHandler {
 			console.log(`Gemini TTS: Saved ${wavBuffer.length} bytes WAV to ${outputPath}`);
 			new Notice(`✅ Audio generated (~${audioDurationSec}s)`);
 		} catch (error: any) {
-			console.error('Gemini TTS error:', error);
+			const safeMessage = redactSecrets(error?.message || 'Unknown error');
+			if (safeMessage.startsWith('Gemini TTS')) {
+				throw new Error(safeMessage);
+			}
+			console.error('Gemini TTS error:', safeMessage);
 
-			if (error.message.includes('401') || error.message.includes('API_KEY')) {
+			if (safeMessage.includes('401') || safeMessage.includes('API_KEY')) {
 				throw new Error('Invalid Gemini API key');
 			}
 
-			if (error.message.includes('429')) {
+			if (safeMessage.includes('429')) {
 				throw new Error('Gemini API rate limit exceeded. Please try again later.');
 			}
 
-			throw new Error(`Gemini TTS generation failed: ${error.message}`);
+			throw new Error(`Gemini TTS generation failed: ${safeMessage}`);
 		}
 	}
 
@@ -173,37 +180,6 @@ export class GeminiTTSHandler {
 		}
 
 		return errorMessage;
-	}
-
-	private pcmToWav(pcmData: Buffer, sampleRate: number, bitsPerSample: number, channels: number): Buffer {
-		const byteRate = sampleRate * channels * (bitsPerSample / 8);
-		const blockAlign = channels * (bitsPerSample / 8);
-		const dataSize = pcmData.length;
-		const headerSize = 44;
-		const fileSize = headerSize + dataSize;
-
-		const wavBuffer = Buffer.alloc(fileSize);
-		let offset = 0;
-
-		wavBuffer.write('RIFF', offset); offset += 4;
-		wavBuffer.writeUInt32LE(fileSize - 8, offset); offset += 4;
-		wavBuffer.write('WAVE', offset); offset += 4;
-
-		wavBuffer.write('fmt ', offset); offset += 4;
-		wavBuffer.writeUInt32LE(16, offset); offset += 4;
-		wavBuffer.writeUInt16LE(1, offset); offset += 2;
-		wavBuffer.writeUInt16LE(channels, offset); offset += 2;
-		wavBuffer.writeUInt32LE(sampleRate, offset); offset += 4;
-		wavBuffer.writeUInt32LE(byteRate, offset); offset += 4;
-		wavBuffer.writeUInt16LE(blockAlign, offset); offset += 2;
-		wavBuffer.writeUInt16LE(bitsPerSample, offset); offset += 2;
-
-		wavBuffer.write('data', offset); offset += 4;
-		wavBuffer.writeUInt32LE(dataSize, offset); offset += 4;
-
-		pcmData.copy(wavBuffer, offset);
-
-		return wavBuffer;
 	}
 
 	getVoices(): Array<{ name: string; style: string; gender: string }> {
