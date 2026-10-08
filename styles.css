@@ -17,6 +17,29 @@
 	color: var(--text-accent);
 }
 
+/* Settings tab. Colors come from the active theme. */
+.voice-briefing-settings-note {
+	margin: 0 0 12px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.voice-briefing-status-row {
+	margin: 4px 0 12px;
+	padding: 8px 12px;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+.voice-briefing-status-row.is-connected {
+	color: var(--text-success);
+}
+
+.voice-briefing-status-row.is-disconnected {
+	color: var(--text-error);
+}
+
 /* Connection status indicators */
 .voice-briefing-status {
 	display: inline-block;

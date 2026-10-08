@@ -6,7 +6,8 @@ await build({
 	entryPoints: [
 		'tests/briefing-audio.test.ts',
 		'tests/model-migration.test.ts',
-		'tests/google-oauth.test.ts'
+		'tests/google-oauth.test.ts',
+		'tests/settings-form.test.ts'
 	],
 	bundle: true,
 	platform: 'node',

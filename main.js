@@ -35,6 +35,13 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/desktop/files.ts
+var files_exports = {};
+__export(files_exports, {
+  ensureBriefingAudioPath: () => ensureBriefingAudioPath,
+  execDesktop: () => execDesktop,
+  readDesktopFile: () => readDesktopFile,
+  writeDesktopFile: () => writeDesktopFile
+});
 async function writeDesktopFile(filePath, data) {
   if (!import_obsidian.Platform.isDesktop) {
     throw new Error("Saving audio requires the desktop app.");
@@ -5048,6 +5055,7 @@ init_files();
 init_gemini_tts_handler();
 init_xai_tts_handler();
 init_catalog();
+init_extract_text();
 
 // src/settings/migrate-settings.ts
 init_catalog();
@@ -5078,6 +5086,98 @@ function migrateModelSettings(settings) {
   moveField(settings, "geminiTtsModel", GEMINI_TTS_MIGRATIONS, changes);
   moveField(settings, "openaiTtsModel", OPENAI_TTS_MIGRATIONS, changes);
   return changes;
+}
+
+// src/settings/settings-form.ts
+var MODEL_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+var VOICE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+var FOLDER_ID = /^[A-Za-z0-9_-]{10,128}$/;
+function checkApiKey(value) {
+  const trimmed = value.trim();
+  if (!trimmed)
+    return { ok: true, value: "", message: "" };
+  if (/\s/.test(trimmed) || trimmed.length < 8 || /your-api-key|sk-\.\.\.|AI\.\.\./i.test(trimmed)) {
+    return { ok: false, value: trimmed, message: "API \uD0A4 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uACF5\uBC31 \uC5C6\uC774 \uBC1C\uAE09\uB41C \uD0A4\uB97C \uBD99\uC5EC \uB123\uC73C\uC138\uC694." };
+  }
+  return { ok: true, value: trimmed, message: "" };
+}
+function checkModelId(value, allowEmpty) {
+  const trimmed = value.trim();
+  if (!trimmed && allowEmpty)
+    return { ok: true, value: "", message: "" };
+  if (!MODEL_ID.test(trimmed)) {
+    return { ok: false, value: trimmed, message: "\uBAA8\uB378 ID\uB294 \uC601\uBB38, \uC22B\uC790, ., _, :, - \uB9CC \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." };
+  }
+  return { ok: true, value: trimmed, message: "" };
+}
+function checkVoiceId(value, allowEmpty) {
+  const trimmed = value.trim();
+  if (!trimmed && allowEmpty)
+    return { ok: true, value: "", message: "" };
+  if (!VOICE_ID.test(trimmed)) {
+    return { ok: false, value: trimmed, message: "\uC74C\uC131 ID\uB294 \uC601\uBB38, \uC22B\uC790, _, - \uB9CC \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4." };
+  }
+  return { ok: true, value: trimmed, message: "" };
+}
+function checkFolderId(value) {
+  const trimmed = value.trim();
+  if (!trimmed)
+    return { ok: true, value: "", message: "" };
+  const fromUrl = trimmed.match(/\/folders\/([A-Za-z0-9_-]+)/);
+  const id = fromUrl ? fromUrl[1] : trimmed;
+  if (!FOLDER_ID.test(id)) {
+    return { ok: false, value: trimmed, message: "\uD3F4\uB354 ID\uB97C \uD655\uC778\uD558\uC138\uC694. \uB4DC\uB77C\uC774\uBE0C \uD3F4\uB354 \uC8FC\uC18C\uB77C\uBA74 /folders/ \uB4A4\uC758 ID\uB9CC \uC800\uC7A5\uD569\uB2C8\uB2E4." };
+  }
+  const message = fromUrl ? "\uC8FC\uC18C\uC5D0\uC11C \uD3F4\uB354 ID\uB9CC \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4." : "";
+  return { ok: true, value: id, message };
+}
+function checkClientId(value) {
+  const trimmed = value.trim();
+  if (!trimmed)
+    return { ok: true, value: "", message: "" };
+  if (/\s/.test(trimmed)) {
+    return { ok: false, value: trimmed, message: "\uD074\uB77C\uC774\uC5B8\uD2B8 ID\uC5D0 \uACF5\uBC31\uC774 \uC788\uC2B5\uB2C8\uB2E4." };
+  }
+  if (!trimmed.endsWith(".apps.googleusercontent.com")) {
+    return { ok: false, value: trimmed, message: "\uB370\uC2A4\uD06C\uD1B1 \uD074\uB77C\uC774\uC5B8\uD2B8 ID\uB294 .apps.googleusercontent.com \uC73C\uB85C \uB05D\uB0A9\uB2C8\uB2E4." };
+  }
+  return { ok: true, value: trimmed, message: "" };
+}
+function clampUnitInterval(value, fallback) {
+  if (!Number.isFinite(value))
+    return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+function buildKeyProbe(provider, apiKey) {
+  const key = apiKey.trim();
+  if (!key)
+    throw new Error("API \uD0A4\uB97C \uC785\uB825\uD55C \uB4A4 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB97C \uB204\uB974\uC138\uC694.");
+  if (provider === "gemini") {
+    return {
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      headers: {}
+    };
+  }
+  if (provider === "openai") {
+    return { url: "https://api.openai.com/v1/models", headers: { Authorization: `Bearer ${key}` } };
+  }
+  if (provider === "anthropic") {
+    return {
+      url: "https://api.anthropic.com/v1/models",
+      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }
+    };
+  }
+  if (provider === "elevenlabs") {
+    return { url: "https://api.elevenlabs.io/v1/user", headers: { "xi-api-key": key } };
+  }
+  return { url: "https://api.x.ai/v1/api-key", headers: { Authorization: `Bearer ${key}` } };
+}
+function probeNotice(status, label) {
+  if (status === 200)
+    return { ok: true, message: `${label}\uC5D0 \uC5F0\uACB0\uB418\uC5C8\uC2B5\uB2C8\uB2E4.` };
+  if (status === 401 || status === 403)
+    return { ok: false, message: `${label} \uD0A4\uAC00 \uAC70\uBD80\uB418\uC5C8\uC2B5\uB2C8\uB2E4.` };
+  return { ok: false, message: `${label} \uC5F0\uACB0\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (${status}).` };
 }
 
 // main.ts
@@ -5793,419 +5893,457 @@ var VoiceBriefingSettingTab = class extends import_obsidian10.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian10.Setting(containerEl).setName("Language and length").setHeading();
-    new import_obsidian10.Setting(containerEl).setName("Output Language").setDesc("Select the language for voice briefing generation").addDropdown((dropdown) => dropdown.addOption("ko-KR", "\u{1F1F0}\u{1F1F7} \uD55C\uAD6D\uC5B4 (Korean)").addOption("en-US", "\u{1F1FA}\u{1F1F8} English (US)").addOption("ja-JP", "\u{1F1EF}\u{1F1F5} \u65E5\u672C\u8A9E (Japanese)").addOption("zh-CN", "\u{1F1E8}\u{1F1F3} \u4E2D\u6587 (Chinese)").addOption("es-ES", "\u{1F1EA}\u{1F1F8} Espa\xF1ol (Spanish)").addOption("fr-FR", "\u{1F1EB}\u{1F1F7} Fran\xE7ais (French)").addOption("de-DE", "\u{1F1E9}\u{1F1EA} Deutsch (German)").setValue(this.plugin.settings.language).onChange(async (value) => {
+    containerEl.addClass("voice-briefing-settings");
+    this.renderAiSection(containerEl);
+    this.renderTtsSection(containerEl);
+    this.renderBriefingSection(containerEl);
+    this.renderDriveSection(containerEl);
+    this.renderAdvancedSection(containerEl);
+  }
+  renderAiSection(containerEl) {
+    const provider = this.plugin.settings.aiProvider;
+    new import_obsidian10.Setting(containerEl).setName("AI \uC6D0\uACE0 \uC0DD\uC131").setHeading();
+    containerEl.createDiv({
+      cls: "voice-briefing-settings-note",
+      text: "\uACE0\uB978 \uC11C\uBE44\uC2A4\uC758 \uD0A4\uC640 \uBAA8\uB378\uB9CC \uD45C\uC2DC\uD569\uB2C8\uB2E4. \uB2E4\uB978 \uC11C\uBE44\uC2A4\uC5D0 \uC800\uC7A5\uD574 \uB454 \uD0A4\uB294 \uC9C0\uC6B0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+    });
+    new import_obsidian10.Setting(containerEl).setName("\uC6D0\uACE0 \uC11C\uBE44\uC2A4").setDesc("\uB300\uBCF8\uC744 \uB9CC\uB4E4 \uC11C\uBE44\uC2A4. \uAE30\uBCF8\uAC12: Gemini.").addDropdown((dropdown) => dropdown.addOption("gemini", "Gemini").addOption("xai", "Grok").addOption("openai", "OpenAI").addOption("anthropic", "Claude").setValue(provider).onChange(async (value) => {
+      this.plugin.settings.aiProvider = value;
+      await this.plugin.saveSettings();
+      this.display();
+    }));
+    this.addProviderKey(containerEl, provider);
+    if (provider === "gemini") {
+      this.addModelPicker(containerEl, "Gemini \uBAA8\uB378", "\uB300\uBCF8 \uBAA8\uB378", GEMINI_TEXT_MODELS, DEFAULT_GEMINI_TEXT_MODEL, this.plugin.settings.geminiModel, async (modelId) => {
+        this.plugin.settings.geminiModel = modelId;
+        await this.plugin.saveSettings();
+      });
+    } else if (provider === "xai") {
+      this.addModelPicker(containerEl, "Grok \uBAA8\uB378", "\uB300\uBCF8 \uBAA8\uB378", XAI_TEXT_MODELS, DEFAULT_XAI_TEXT_MODEL, this.plugin.settings.xaiModel, async (modelId) => {
+        this.plugin.settings.xaiModel = modelId;
+        await this.plugin.saveSettings();
+      });
+    } else if (provider === "openai") {
+      this.addModelPicker(containerEl, "OpenAI \uBAA8\uB378", "\uB300\uBCF8 \uBAA8\uB378. GPT-6 ID\uB294 Responses API\uB97C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.", OPENAI_TEXT_MODELS, DEFAULT_OPENAI_TEXT_MODEL, this.plugin.settings.openaiModel, async (modelId) => {
+        this.plugin.settings.openaiModel = modelId;
+        await this.plugin.saveSettings();
+      });
+    } else {
+      this.addModelPicker(containerEl, "Claude \uBAA8\uB378", "\uB300\uBCF8 \uBAA8\uB378", ANTHROPIC_TEXT_MODELS, DEFAULT_ANTHROPIC_TEXT_MODEL, this.plugin.settings.anthropicModel, async (modelId) => {
+        this.plugin.settings.anthropicModel = modelId;
+        await this.plugin.saveSettings();
+      });
+    }
+  }
+  renderTtsSection(containerEl) {
+    const engine = this.plugin.settings.ttsEngine;
+    new import_obsidian10.Setting(containerEl).setName("TTS \uC74C\uC131").setHeading();
+    containerEl.createDiv({
+      cls: "voice-briefing-settings-note",
+      text: "\uC0DD\uC131\uD560 \uB54C\uB9C8\uB2E4 \uBE60\uB978 \uC120\uD0DD\uC5D0\uC11C \uBC14\uAFC0 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC5D0\uB294 \uAE30\uBCF8 \uC74C\uC131\uB9CC \uB461\uB2C8\uB2E4."
+    });
+    new import_obsidian10.Setting(containerEl).setName("\uC74C\uC131 \uC5D4\uC9C4").setDesc("\uAE30\uBCF8\uAC12: Gemini TTS.").addDropdown((dropdown) => dropdown.addOption("gemini", "Gemini TTS").addOption("openai", "OpenAI TTS").addOption("xai", "Grok TTS").addOption("edge", "Edge TTS (\uBB34\uB8CC)").addOption("elevenlabs", "ElevenLabs").setValue(engine).onChange(async (value) => {
+      this.plugin.settings.ttsEngine = value;
+      await this.plugin.saveSettings();
+      this.display();
+    }));
+    const shared = this.plugin.settings.aiProvider === engine;
+    if (engine === "gemini") {
+      if (shared) {
+        containerEl.createDiv({ cls: "voice-briefing-settings-note", text: "Gemini \uD0A4\uB294 \uC704\uC758 \uC6D0\uACE0 \uC0DD\uC131 \uD0A4\uB97C \uADF8\uB300\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4." });
+      } else {
+        this.addProviderKey(containerEl, "gemini");
+      }
+      this.addModelPicker(containerEl, "Gemini TTS \uBAA8\uB378", "\uC74C\uC131 \uBAA8\uB378", GEMINI_TTS_MODELS, DEFAULT_GEMINI_TTS_MODEL, this.plugin.settings.geminiTtsModel, async (modelId) => {
+        this.plugin.settings.geminiTtsModel = modelId;
+        await this.plugin.saveSettings();
+      });
+      this.addGeminiVoice(containerEl);
+      this.addGeminiLanguage(containerEl);
+    } else if (engine === "openai") {
+      if (shared) {
+        containerEl.createDiv({ cls: "voice-briefing-settings-note", text: "OpenAI \uD0A4\uB294 \uC704\uC758 \uC6D0\uACE0 \uC0DD\uC131 \uD0A4\uB97C \uADF8\uB300\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4." });
+      } else {
+        this.addProviderKey(containerEl, "openai");
+      }
+      this.addModelPicker(containerEl, "OpenAI TTS \uBAA8\uB378", "\uC74C\uC131 \uBAA8\uB378", OPENAI_TTS_MODELS, DEFAULT_OPENAI_TTS_MODEL, this.plugin.settings.openaiTtsModel, async (modelId) => {
+        this.plugin.settings.openaiTtsModel = modelId;
+        await this.plugin.saveSettings();
+      });
+      this.addOpenAiVoice(containerEl);
+    } else if (engine === "xai") {
+      containerEl.createDiv({
+        cls: "voice-briefing-settings-note",
+        text: "Grok \uC74C\uC131 \uC0DD\uC131\uC740 \uC544\uC9C1 \uAEBC\uC838 \uC788\uC2B5\uB2C8\uB2E4. \uD0A4 \uD655\uC778\uACFC \uBAA9\uC18C\uB9AC \uC120\uD0DD\uB9CC \uC800\uC7A5\uB429\uB2C8\uB2E4."
+      });
+      if (!shared)
+        this.addProviderKey(containerEl, "xai");
+      this.addXaiVoice(containerEl);
+    } else if (engine === "edge") {
+      new import_obsidian10.Setting(containerEl).setName("Edge \uBAA9\uC18C\uB9AC").setDesc(`\uAE30\uBCF8\uAC12\uC740 \uCD9C\uB825 \uC5B8\uC5B4\uC5D0 \uB9DE\uCDA5\uB2C8\uB2E4. \uD55C\uAD6D\uC5B4 \uAE30\uBCF8\uAC12: ko-KR-SunHiNeural.`).addDropdown((dropdown) => {
+        this.addEdgeVoiceOptions(dropdown);
+        return dropdown.setValue(this.plugin.settings.edgeVoice).onChange(async (value) => {
+          const check = checkVoiceId(value, false);
+          if (!check.ok) {
+            new import_obsidian10.Notice(check.message);
+            return;
+          }
+          this.plugin.settings.edgeVoice = check.value;
+          await this.plugin.saveSettings();
+        });
+      });
+      new import_obsidian10.Setting(containerEl).setName("Edge TTS \uD655\uC778").setDesc("\uC774 \uCEF4\uD4E8\uD130\uC5D0 edge-tts \uBA85\uB839\uC774 \uC788\uB294\uC9C0 \uD655\uC778\uD569\uB2C8\uB2E4. API \uD0A4\uB294 \uC5C6\uC2B5\uB2C8\uB2E4.").addButton((button) => button.setButtonText("\uC5F0\uACB0 \uD14C\uC2A4\uD2B8").onClick(async () => {
+        try {
+          const { execDesktop: execDesktop2 } = await Promise.resolve().then(() => (init_files(), files_exports));
+          await execDesktop2("edge-tts --help");
+          new import_obsidian10.Notice("\u2705 Edge TTS\uB97C \uCC3E\uC558\uC2B5\uB2C8\uB2E4.");
+        } catch (error) {
+          new import_obsidian10.Notice(`\u274C Edge TTS\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. ${redactSecrets((error == null ? void 0 : error.message) || "")}`);
+        }
+      }));
+    } else {
+      this.addElevenKey(containerEl);
+      this.addModelPicker(containerEl, "ElevenLabs \uBAA8\uB378", "\uAD8C\uC7A5 \uBAA8\uB378\uC740 v4\uC785\uB2C8\uB2E4.", ELEVENLABS_MODELS, DEFAULT_ELEVENLABS_MODEL, this.plugin.settings.elevenLabsModelId, async (modelId) => {
+        this.plugin.settings.elevenLabsModelId = modelId;
+        await this.plugin.saveSettings();
+      });
+      new import_obsidian10.Setting(containerEl).setName("ElevenLabs \uBCF4\uC774\uC2A4 ID").setDesc("ElevenLabs\uC5D0\uC11C \uBCF5\uC0AC\uD55C \uBCF4\uC774\uC2A4 ID. \uBE44\uC6CC \uB450\uBA74 \uC74C\uC131\uC744 \uB9CC\uB4E4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
+        const check = checkVoiceId(value, true);
+        if (!check.ok) {
+          new import_obsidian10.Notice(check.message);
+          return;
+        }
+        this.plugin.settings.elevenLabsVoiceId = check.value;
+        await this.plugin.saveSettings();
+      }));
+    }
+  }
+  renderBriefingSection(containerEl) {
+    new import_obsidian10.Setting(containerEl).setName("\uBE0C\uB9AC\uD551 \uAE38\uC774\xB7\uD504\uB86C\uD504\uD2B8").setHeading();
+    containerEl.createDiv({
+      cls: "voice-briefing-settings-note",
+      text: "\uAE30\uBCF8 \uC2A4\uD0C0\uC77C\uC740 75\u2013110\uCD08\uB85C \uB9DE\uCDA5\uB2C8\uB2E4. \uCEE4\uC2A4\uD140 \uC2A4\uD0C0\uC77C\uC740 \uADF8 \uAE38\uC774\uB97C \uAC15\uC81C\uD558\uC9C0 \uC54A\uACE0 3000\uC790\uAE4C\uC9C0\uB9CC \uC790\uB985\uB2C8\uB2E4."
+    });
+    new import_obsidian10.Setting(containerEl).setName("\uCD9C\uB825 \uC5B8\uC5B4").setDesc("\uB300\uBCF8\uACFC Edge \uAE30\uBCF8 \uBAA9\uC18C\uB9AC\uC5D0 \uD568\uAED8 \uC4F0\uC785\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: \uD55C\uAD6D\uC5B4.").addDropdown((dropdown) => dropdown.addOption("ko-KR", "\uD55C\uAD6D\uC5B4").addOption("en-US", "English (US)").addOption("ja-JP", "\u65E5\u672C\u8A9E").addOption("zh-CN", "\u4E2D\u6587").addOption("es-ES", "Espa\xF1ol").addOption("fr-FR", "Fran\xE7ais").addOption("de-DE", "Deutsch").setValue(this.plugin.settings.language).onChange(async (value) => {
       this.plugin.settings.language = value;
       await this.plugin.saveSettings();
       this.autoSelectVoice(value);
     }));
-    new import_obsidian10.Setting(containerEl).setName("Briefing Style").setDesc("Choose how the briefing should be presented").addDropdown((dropdown) => dropdown.addOption("metaphor", "\u{1F31F} Metaphorical (Easy analogies)").addOption("feynman", "\u{1F393} Feynman Technique (Teaching style)").addOption("anchor", "\u{1F4F0} News Anchor (Professional)").addOption("custom", "\u270F\uFE0F Custom (Define your own)").setValue(this.plugin.settings.briefingStyle).onChange(async (value) => {
+    new import_obsidian10.Setting(containerEl).setName("\uBE0C\uB9AC\uD551 \uC2A4\uD0C0\uC77C").setDesc("\uAE30\uBCF8\uAC12: Feynman.").addDropdown((dropdown) => dropdown.addOption("metaphor", "\uBE44\uC720").addOption("feynman", "Feynman").addOption("anchor", "\uB274\uC2A4 \uC575\uCEE4").addOption("custom", "\uCEE4\uC2A4\uD140").setValue(this.plugin.settings.briefingStyle).onChange(async (value) => {
       this.plugin.settings.briefingStyle = value;
       await this.plugin.saveSettings();
       this.display();
     }));
     if (this.plugin.settings.briefingStyle === "custom") {
-      new import_obsidian10.Setting(containerEl).setName("Custom Style Prompt").setDesc("Define your own briefing style instruction").addTextArea((text) => text.setPlaceholder("Example: Explain concepts as if talking to a 10-year-old...").setValue(this.plugin.settings.customStylePrompt).onChange(async (value) => {
+      new import_obsidian10.Setting(containerEl).setName("\uCEE4\uC2A4\uD140 \uD504\uB86C\uD504\uD2B8").setDesc("\uBE44\uC5B4 \uC788\uC73C\uBA74 \uC2A4\uD0C0\uC77C\uB9CC \uCEE4\uC2A4\uD140\uC774\uACE0, \uAE38\uC774\uB294 \uAE30\uBCF8 \uADDC\uCE59\uC744 \uB530\uB985\uB2C8\uB2E4.").addTextArea((text) => text.setPlaceholder("\uC608: \uCD08\uB4F1\uD559\uC0DD\uC5D0\uAC8C \uC124\uBA85\uD558\uB4EF \uB9D0\uD574 \uC8FC\uC138\uC694.").setValue(this.plugin.settings.customStylePrompt).onChange(async (value) => {
         this.plugin.settings.customStylePrompt = value;
         await this.plugin.saveSettings();
       }));
     }
-    new import_obsidian10.Setting(containerEl).setName("AI provider").setHeading();
-    new import_obsidian10.Setting(containerEl).setName("AI Provider").setDesc("Select the AI service for script generation").addDropdown((dropdown) => dropdown.addOption("gemini", "Google Gemini").addOption("xai", "XAI (Grok)").addOption("openai", "OpenAI").addOption("anthropic", "Anthropic (Claude)").setValue(this.plugin.settings.aiProvider).onChange(async (value) => {
-      this.plugin.settings.aiProvider = value;
-      await this.plugin.saveSettings();
-      this.display();
-    }));
-    const aiApiInfo = containerEl.createDiv("voice-briefing-info");
-    aiApiInfo.createEl("p", {
-      text: "\u{1F4A1} Configure all API keys here. Switch between providers anytime using the dropdown above.",
-      cls: "setting-item-description"
-    });
-    new import_obsidian10.Setting(containerEl).setName("\u{1F916} Gemini API Key").setDesc("Google Gemini API key (also used for Gemini TTS)").addText((text) => {
-      text.setPlaceholder("AI...").setValue(this.plugin.settings.geminiApiKey).onChange(async (value) => {
-        this.plugin.settings.geminiApiKey = value;
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      return text;
-    });
-    new import_obsidian10.Setting(containerEl).setName("\u{1F680} xAI API Key").setDesc("xAI (Grok) API key (also used for xAI TTS)").addText((text) => {
-      text.setPlaceholder("xai-...").setValue(this.plugin.settings.xaiApiKey).onChange(async (value) => {
-        this.plugin.settings.xaiApiKey = value;
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      return text;
-    });
-    new import_obsidian10.Setting(containerEl).setName("\u{1F7E2} OpenAI API Key").setDesc("OpenAI API key for GPT models").addText((text) => {
-      text.setPlaceholder("sk-...").setValue(this.plugin.settings.openaiApiKey).onChange(async (value) => {
-        this.plugin.settings.openaiApiKey = value;
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      return text;
-    });
-    new import_obsidian10.Setting(containerEl).setName("\u{1F7E3} Anthropic API Key").setDesc("Anthropic API key for Claude models").addText((text) => {
-      text.setPlaceholder("sk-ant-...").setValue(this.plugin.settings.anthropicApiKey).onChange(async (value) => {
-        this.plugin.settings.anthropicApiKey = value;
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      return text;
-    });
-    if (this.plugin.settings.aiProvider === "gemini") {
-      this.addModelPicker(containerEl, "Gemini model", "Script model. A custom ID overrides the list.", GEMINI_TEXT_MODELS, this.plugin.settings.geminiModel, async (modelId) => {
-        this.plugin.settings.geminiModel = modelId;
-        await this.plugin.saveSettings();
-      });
-    }
-    if (this.plugin.settings.aiProvider === "xai") {
-      this.addModelPicker(containerEl, "xAI model", "Script model. A custom ID overrides the list.", XAI_TEXT_MODELS, this.plugin.settings.xaiModel, async (modelId) => {
-        this.plugin.settings.xaiModel = modelId;
-        await this.plugin.saveSettings();
-      });
-    }
-    if (this.plugin.settings.aiProvider === "openai") {
-      this.addModelPicker(containerEl, "OpenAI model", "Script model. GPT-6 ids use the Responses API. A custom ID overrides the list.", OPENAI_TEXT_MODELS, this.plugin.settings.openaiModel, async (modelId) => {
-        this.plugin.settings.openaiModel = modelId;
-        await this.plugin.saveSettings();
-      });
-    }
-    if (this.plugin.settings.aiProvider === "anthropic") {
-      this.addModelPicker(containerEl, "Anthropic model", "Script model. A custom ID overrides the list.", ANTHROPIC_TEXT_MODELS, this.plugin.settings.anthropicModel, async (modelId) => {
-        this.plugin.settings.anthropicModel = modelId;
-        await this.plugin.saveSettings();
-      });
-    }
-    new import_obsidian10.Setting(containerEl).setName("Text to speech").setHeading();
-    new import_obsidian10.Setting(containerEl).setName("Default TTS Engine").setDesc("Choose the default TTS engine (can be changed per-generation in Quick Options)").addDropdown((dropdown) => dropdown.addOption("gemini", "\u{1F916} Gemini TTS (Recommended)").addOption("openai", "\u{1F7E2} OpenAI TTS").addOption("xai", "\u{1F680} xAI Grok TTS (Premium)").addOption("edge", "\u{1F537} Edge TTS (Free)").addOption("elevenlabs", "\u{1F7E3} ElevenLabs (Premium)").setValue(this.plugin.settings.ttsEngine).onChange(async (value) => {
-      this.plugin.settings.ttsEngine = value;
-      await this.plugin.saveSettings();
-      this.display();
-    }));
-    const ttsApiInfo = containerEl.createDiv("voice-briefing-info");
-    ttsApiInfo.createEl("p", {
-      text: "\u{1F4A1} Gemini TTS & xAI TTS use the same API keys from AI Provider Settings above. Configure ElevenLabs API key below.",
-      cls: "setting-item-description"
-    });
-    new import_obsidian10.Setting(containerEl).setName("\u{1F7E3} ElevenLabs API Key").setDesc("Enter your ElevenLabs API key for premium TTS").addText((text) => {
-      text.setPlaceholder("your-api-key").setValue(this.plugin.settings.elevenLabsApiKey).onChange(async (value) => {
-        this.plugin.settings.elevenLabsApiKey = value;
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      return text;
-    });
-    if (this.plugin.settings.ttsEngine === "gemini") {
-      this.addModelPicker(containerEl, "Gemini TTS model", "Speech model. A custom ID overrides the list.", GEMINI_TTS_MODELS, this.plugin.settings.geminiTtsModel, async (modelId) => {
-        this.plugin.settings.geminiTtsModel = modelId;
-        await this.plugin.saveSettings();
-      });
-      new import_obsidian10.Setting(containerEl).setName("Default Gemini Voice").setDesc("Select default voice (grouped by gender) - 30 voice options").addDropdown((dropdown) => {
-        const femaleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "F");
-        const maleVoices = GEMINI_TTS_VOICES.filter((v) => v.gender === "M");
-        const femaleGroup = dropdown.selectEl.createEl("optgroup", { attr: { label: "\u{1F469} Female Voices" } });
-        femaleVoices.forEach((voice) => {
-          const option = femaleGroup.createEl("option", {
-            text: `${voice.name} - ${voice.style}`,
-            value: voice.name
-          });
-          if (voice.name === this.plugin.settings.geminiTtsVoice) {
-            option.selected = true;
-          }
-        });
-        const maleGroup = dropdown.selectEl.createEl("optgroup", { attr: { label: "\u{1F468} Male Voices" } });
-        maleVoices.forEach((voice) => {
-          const option = maleGroup.createEl("option", {
-            text: `${voice.name} - ${voice.style}`,
-            value: voice.name
-          });
-          if (voice.name === this.plugin.settings.geminiTtsVoice) {
-            option.selected = true;
-          }
-        });
-        return dropdown.onChange(async (value) => {
-          this.plugin.settings.geminiTtsVoice = value;
-          await this.plugin.saveSettings();
-        });
-      });
-      new import_obsidian10.Setting(containerEl).setName("Default Gemini Language").setDesc("Select output language (Auto Detect recommended)").addDropdown((dropdown) => {
-        GEMINI_TTS_LANGUAGES.forEach((lang) => {
-          dropdown.addOption(lang.code, lang.label);
-        });
-        return dropdown.setValue(this.plugin.settings.geminiTtsLanguage).onChange(async (value) => {
-          this.plugin.settings.geminiTtsLanguage = value;
-          await this.plugin.saveSettings();
-        });
-      });
-    }
-    if (this.plugin.settings.ttsEngine === "xai") {
-      new import_obsidian10.Setting(containerEl).setName("Test xAI Connection").setDesc("Verify your xAI API key is valid for TTS").addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
-        if (!this.plugin.settings.xaiApiKey) {
-          new import_obsidian10.Notice("\u274C Please enter your xAI API key in AI Provider Settings first");
-          return;
-        }
-        try {
-          new import_obsidian10.Notice("\u{1F504} Testing xAI connection...");
-          const response = await (0, import_obsidian10.requestUrl)({
-            url: "https://api.x.ai/v1/api-key",
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${this.plugin.settings.xaiApiKey}`
-            }
-          });
-          if (response.status === 200) {
-            new import_obsidian10.Notice("\u2705 xAI API key is valid!");
-          } else {
-            new import_obsidian10.Notice("\u274C xAI API key is invalid");
-          }
-        } catch (error) {
-          if (error.status === 401) {
-            new import_obsidian10.Notice("\u274C Invalid xAI API key");
-          } else {
-            new import_obsidian10.Notice("\u26A0\uFE0F Could not verify key. Try generating audio to test.");
-          }
-        }
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Default xAI Voice").setDesc("Select the default voice for xAI TTS (7 premium voices)").addDropdown((dropdown) => {
-        const maleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "M");
-        const femaleVoices = XAI_TTS_VOICES.filter((v) => v.gender === "F");
-        dropdown.addOption("", "\u2500\u2500 Male Voices \u2500\u2500");
-        maleVoices.forEach((voice) => {
-          dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
-        });
-        dropdown.addOption("", "\u2500\u2500 Female Voices \u2500\u2500");
-        femaleVoices.forEach((voice) => {
-          dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
-        });
-        return dropdown.setValue(this.plugin.settings.xaiTtsVoice).onChange(async (value) => {
-          if (value) {
-            this.plugin.settings.xaiTtsVoice = value;
-            await this.plugin.saveSettings();
-          }
-        });
-      });
-    }
-    if (this.plugin.settings.ttsEngine === "edge") {
-      new import_obsidian10.Setting(containerEl).setName("Default Edge Voice").setDesc("Select Edge TTS voice (Free)").addDropdown((dropdown) => {
-        this.addEdgeVoiceOptions(dropdown);
-        return dropdown.setValue(this.plugin.settings.edgeVoice).onChange(async (value) => {
-          this.plugin.settings.edgeVoice = value;
-          await this.plugin.saveSettings();
-        });
-      });
-    }
-    if (this.plugin.settings.ttsEngine === "openai") {
-      this.addModelPicker(containerEl, "OpenAI TTS model", "Speech model. A custom ID overrides the list.", OPENAI_TTS_MODELS, this.plugin.settings.openaiTtsModel, async (modelId) => {
-        this.plugin.settings.openaiTtsModel = modelId;
-        await this.plugin.saveSettings();
-      });
-      new import_obsidian10.Setting(containerEl).setName("OpenAI TTS voice").setDesc("Built-in speech voice. Type another voice id below if the list does not include it.").addDropdown((dropdown) => {
-        OPENAI_TTS_VOICES.forEach((voice) => dropdown.addOption(voice.id, voice.label));
-        const known = OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice);
-        return dropdown.setValue(known ? this.plugin.settings.openaiTtsVoice : DEFAULT_OPENAI_TTS_VOICE).onChange(async (value) => {
-          this.plugin.settings.openaiTtsVoice = value;
-          await this.plugin.saveSettings();
-        });
-      });
-      new import_obsidian10.Setting(containerEl).setName("OpenAI TTS voice \u2014 custom ID").setDesc("Leave empty to use the voice selected above.").addText((text) => text.setPlaceholder("coral").setValue(OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice) ? "" : this.plugin.settings.openaiTtsVoice).onChange(async (value) => {
-        if (!value.trim())
-          return;
-        this.plugin.settings.openaiTtsVoice = value.trim();
-        await this.plugin.saveSettings();
-      }));
-    }
-    if (this.plugin.settings.ttsEngine === "elevenlabs") {
-      this.addModelPicker(containerEl, "ElevenLabs model", "v4 is the current recommended model. A custom ID overrides the list.", ELEVENLABS_MODELS, this.plugin.settings.elevenLabsModelId, async (modelId) => {
-        this.plugin.settings.elevenLabsModelId = modelId;
-        await this.plugin.saveSettings();
-      });
-      new import_obsidian10.Setting(containerEl).setName("ElevenLabs Voice ID").setDesc("Enter your ElevenLabs voice ID").addText((text) => text.setPlaceholder("voice-id").setValue(this.plugin.settings.elevenLabsVoiceId).onChange(async (value) => {
-        this.plugin.settings.elevenLabsVoiceId = value;
-        await this.plugin.saveSettings();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Voice characteristics").setHeading();
-      new import_obsidian10.Setting(containerEl).setName("Voice Template").setDesc("Select a preset to automatically configure settings below").addDropdown((dropdown) => dropdown.addOption("custom", "Custom / Manual Configuration").addOption("briefing", "\u{1F4CA} Briefing (Balanced)").addOption("lecture", "\u{1F393} Lecture (Clear & Stable)").addOption("news", "\u{1F4F0} News (Formal & Flat)").addOption("story", "\u{1F3AD} Storytelling (Expressive)").addOption("asmr", "\u{1F92B} ASMR (Soft & Detailed)").setValue("custom").onChange(async (value) => {
-        if (value === "custom")
-          return;
-        switch (value) {
-          case "briefing":
-            this.plugin.settings.elevenLabsStability = 0.5;
-            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-            this.plugin.settings.elevenLabsStyle = 0;
-            this.plugin.settings.elevenLabsSpeakerBoost = true;
-            break;
-          case "lecture":
-            this.plugin.settings.elevenLabsStability = 0.75;
-            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-            this.plugin.settings.elevenLabsStyle = 0;
-            this.plugin.settings.elevenLabsSpeakerBoost = true;
-            break;
-          case "news":
-            this.plugin.settings.elevenLabsStability = 0.85;
-            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-            this.plugin.settings.elevenLabsStyle = 0;
-            this.plugin.settings.elevenLabsSpeakerBoost = true;
-            break;
-          case "story":
-            this.plugin.settings.elevenLabsStability = 0.4;
-            this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-            this.plugin.settings.elevenLabsStyle = 0.45;
-            this.plugin.settings.elevenLabsSpeakerBoost = true;
-            break;
-          case "asmr":
-            this.plugin.settings.elevenLabsStability = 0.5;
-            this.plugin.settings.elevenLabsSimilarityBoost = 0.9;
-            this.plugin.settings.elevenLabsStyle = 0;
-            this.plugin.settings.elevenLabsSpeakerBoost = false;
-            break;
-        }
-        await this.plugin.saveSettings();
-        this.display();
-        new import_obsidian10.Notice(`Applied "${value}" template`);
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Stability").setDesc("Higher = more consistent/monotone. Lower = more emotive/random.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsStability).setDynamicTooltip().onChange(async (value) => {
-        this.plugin.settings.elevenLabsStability = value;
-        await this.plugin.saveSettings();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Clarity + Similarity Boost").setDesc("Higher = closer to original voice but potential artifacts. Lower = clearer but generic.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsSimilarityBoost).setDynamicTooltip().onChange(async (value) => {
-        this.plugin.settings.elevenLabsSimilarityBoost = value;
-        await this.plugin.saveSettings();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Style Exaggeration").setDesc("Higher = more exaggerated style. 0 = neutral.").addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(this.plugin.settings.elevenLabsStyle).setDynamicTooltip().onChange(async (value) => {
-        this.plugin.settings.elevenLabsStyle = value;
-        await this.plugin.saveSettings();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Speaker Boost").setDesc("Boosts the volume and clarity of the speaker.").addToggle((toggle) => toggle.setValue(this.plugin.settings.elevenLabsSpeakerBoost).onChange(async (value) => {
-        this.plugin.settings.elevenLabsSpeakerBoost = value;
-        await this.plugin.saveSettings();
-      }));
-    }
-    new import_obsidian10.Setting(containerEl).setName("Cloud sharing").setHeading();
-    new import_obsidian10.Setting(containerEl).setName("Enable Cloud Sharing").setDesc("Upload audio files to Google Drive for sharing").addToggle((toggle) => toggle.setValue(this.plugin.settings.cloudSharingEnabled).onChange(async (value) => {
+  }
+  renderDriveSection(containerEl) {
+    const settings = this.plugin.settings;
+    new import_obsidian10.Setting(containerEl).setName("\uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C").setHeading();
+    new import_obsidian10.Setting(containerEl).setName("\uD074\uB77C\uC6B0\uB4DC \uACF5\uC720").setDesc("\uCF1C\uBA74 \uC74C\uC131 \uD30C\uC77C\uC744 \uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C\uC5D0 \uC62C\uB9AC\uACE0 \uB178\uD2B8\uC5D0 \uB9C1\uD06C\uB97C \uB123\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: \uAEBC\uC9D0.").addToggle((toggle) => toggle.setValue(settings.cloudSharingEnabled).onChange(async (value) => {
       this.plugin.settings.cloudSharingEnabled = value;
       await this.plugin.saveSettings();
       this.display();
     }));
-    if (this.plugin.settings.cloudSharingEnabled) {
-      new import_obsidian10.Setting(containerEl).setName("Google Cloud credentials").setHeading();
-      const credentialsInfo = containerEl.createDiv("voice-briefing-info");
-      credentialsInfo.createEl("p", {
-        text: "\u{1F4CB} First, get your credentials from Google Cloud Console:",
-        cls: "setting-item-description"
+    if (!settings.cloudSharingEnabled)
+      return;
+    const connected = settings.googleDriveConnected;
+    containerEl.createDiv({
+      cls: `voice-briefing-status-row ${connected ? "is-connected" : "is-disconnected"}`,
+      text: connected ? "\uC5F0\uACB0\uB428. \uD1A0\uD070\uC740 \uC774 \uD50C\uB7EC\uADF8\uC778 \uB370\uC774\uD130\uC5D0\uB9CC \uC800\uC7A5\uB418\uACE0 \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB429\uB2C8\uB2E4." : "\uC5F0\uACB0 \uC548 \uB428. \uB370\uC2A4\uD06C\uD1B1 \uD074\uB77C\uC774\uC5B8\uD2B8 ID\uB97C \uB123\uC740 \uB4A4 \uB85C\uADF8\uC778\uD558\uC138\uC694."
+    });
+    new import_obsidian10.Setting(containerEl).setName("\uD074\uB77C\uC774\uC5B8\uD2B8 ID").setDesc("Google Cloud \uB370\uC2A4\uD06C\uD1B1 \uC571 \uD074\uB77C\uC774\uC5B8\uD2B8. \uC608: \u2026.apps.googleusercontent.com").addText((text) => text.setPlaceholder("\u2026.apps.googleusercontent.com").setValue(settings.googleDriveClientId).onChange(async (value) => {
+      const trimmed = value.trim();
+      if (trimmed && !/\s/.test(trimmed) && !trimmed.endsWith(".apps.googleusercontent.com"))
+        return;
+      const check = checkClientId(value);
+      if (!check.ok) {
+        new import_obsidian10.Notice(check.message);
+        return;
+      }
+      this.plugin.settings.googleDriveClientId = check.value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian10.Setting(containerEl).setName("\uD074\uB77C\uC774\uC5B8\uD2B8 \uC2DC\uD06C\uB9BF").setDesc("\uAC19\uC740 \uB370\uC2A4\uD06C\uD1B1 \uD074\uB77C\uC774\uC5B8\uD2B8\uC758 \uC2DC\uD06C\uB9BF. \uD654\uBA74\uC5D0\uC11C\uB294 \uAC00\uB824\uC9D1\uB2C8\uB2E4.").addText((text) => {
+      text.setPlaceholder("GOCSPX-\u2026").setValue(settings.googleDriveClientSecret).onChange(async (value) => {
+        const check = checkApiKey(value);
+        if (!check.ok) {
+          new import_obsidian10.Notice(check.message);
+          return;
+        }
+        this.plugin.settings.googleDriveClientSecret = check.value;
+        await this.plugin.saveSettings();
       });
-      const steps = credentialsInfo.createEl("ol");
-      steps.createEl("li", { text: "Go to console.cloud.google.com and create a project" });
-      steps.createEl("li", { text: "Enable the Google Drive API" });
-      steps.createEl("li", { text: "Configure the OAuth consent screen and add yourself as a test user" });
-      steps.createEl("li", { text: "Create an OAuth client of type Desktop app" });
-      steps.createEl("li", { text: "Copy the Client ID and Client Secret below" });
-      steps.createEl("li", { text: "If the client asks for a redirect URI, add http://127.0.0.1:8585/callback" });
-      new import_obsidian10.Setting(containerEl).setName("Client ID").setDesc("OAuth 2.0 Client ID from Google Cloud Console").addText((text) => text.setPlaceholder("xxxx.apps.googleusercontent.com").setValue(this.plugin.settings.googleDriveClientId).onChange(async (value) => {
-        this.plugin.settings.googleDriveClientId = value;
+      text.inputEl.type = "password";
+      return text;
+    });
+    const actions = new import_obsidian10.Setting(containerEl).setName(connected ? "\uB85C\uADF8\uC544\uC6C3" : "\uB85C\uADF8\uC778").setDesc("\uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C Google \uACC4\uC815\uC73C\uB85C \uC5F0\uACB0\uD569\uB2C8\uB2E4. \uD14C\uC2A4\uD2B8 \uBAA8\uB4DC \uC571\uC758 \uAC31\uC2E0 \uD1A0\uD070\uC740 7\uC77C \uB4A4 \uB9CC\uB8CC\uB429\uB2C8\uB2E4.");
+    if (!connected) {
+      actions.addButton((button) => button.setButtonText("\uB85C\uADF8\uC778").setCta().onClick(() => this.loginDrive()));
+    } else {
+      actions.addButton((button) => button.setButtonText("\uC5F0\uACB0 \uD14C\uC2A4\uD2B8").onClick(() => this.testDrive())).addButton((button) => button.setButtonText("\uB85C\uADF8\uC544\uC6C3").setWarning().onClick(() => this.logoutDrive()));
+    }
+    new import_obsidian10.Setting(containerEl).setName("\uB9C1\uD06C \uD615\uC2DD").setDesc("\uB178\uD2B8\uC5D0 \uB123\uB294 \uD615\uC2DD. \uAE30\uBCF8\uAC12: HTML \uC624\uB514\uC624 \uD50C\uB808\uC774\uC5B4.").addDropdown((dropdown) => dropdown.addOption("html", "HTML \uC624\uB514\uC624 \uD50C\uB808\uC774\uC5B4").addOption("markdown", "\uB9C8\uD06C\uB2E4\uC6B4 \uB9C1\uD06C").addOption("direct", "\uC8FC\uC18C\uB9CC").setValue(settings.linkFormat).onChange(async (value) => {
+      this.plugin.settings.linkFormat = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian10.Setting(containerEl).setName("\uB4DC\uB77C\uC774\uBE0C \uD3F4\uB354 ID").setDesc("\uBE44\uC6B0\uBA74 \uB0B4 \uB4DC\uB77C\uC774\uBE0C \uB8E8\uD2B8\uC5D0 \uC62C\uB9BD\uB2C8\uB2E4. \uD3F4\uB354 \uC8FC\uC18C\uB97C \uBD99\uC5EC \uB123\uC73C\uBA74 ID\uB9CC \uC800\uC7A5\uD569\uB2C8\uB2E4.").addText((text) => text.setPlaceholder("\uD3F4\uB354 ID \uB610\uB294 \uD3F4\uB354 \uC8FC\uC18C").setValue(settings.googleDriveFolderId || "").onChange(async (value) => {
+      const trimmed = value.trim();
+      if (trimmed && !trimmed.includes("/") && trimmed.length < 10 && !/\s/.test(trimmed))
+        return;
+      const check = checkFolderId(value);
+      if (!check.ok) {
+        new import_obsidian10.Notice(check.message);
+        return;
+      }
+      this.plugin.settings.googleDriveFolderId = check.value;
+      await this.plugin.saveSettings();
+      if (check.message)
+        new import_obsidian10.Notice(check.message);
+    }));
+  }
+  renderAdvancedSection(containerEl) {
+    new import_obsidian10.Setting(containerEl).setName("\uACE0\uAE09").setHeading();
+    if (this.plugin.settings.ttsEngine !== "elevenlabs") {
+      containerEl.createDiv({
+        cls: "voice-briefing-settings-note",
+        text: "ElevenLabs\uB97C \uACE0\uB974\uBA74 \uC548\uC815\uC131, \uC720\uC0AC\uB3C4, \uC2A4\uD0C0\uC77C \uC870\uC808\uC774 \uC5EC\uAE30\uC5D0 \uB098\uD0C0\uB0A9\uB2C8\uB2E4."
+      });
+      return;
+    }
+    new import_obsidian10.Setting(containerEl).setName("\uBAA9\uC18C\uB9AC \uD504\uB9AC\uC14B").setDesc("\uACE0\uB974\uBA74 \uC544\uB798 \uC2AC\uB77C\uC774\uB354\uB97C \uBC14\uAFC9\uB2C8\uB2E4. \uAE30\uBCF8 \uBE0C\uB9AC\uD551 \uAC12\uC740 \uC548\uC815\uC131 0.5, \uC720\uC0AC\uB3C4 0.75, \uC2A4\uD0C0\uC77C 0\uC785\uB2C8\uB2E4.").addDropdown((dropdown) => dropdown.addOption("custom", "\uC9C1\uC811 \uC870\uC808").addOption("briefing", "\uBE0C\uB9AC\uD551").addOption("lecture", "\uAC15\uC758").addOption("news", "\uB274\uC2A4").addOption("story", "\uC774\uC57C\uAE30").addOption("asmr", "ASMR").setValue("custom").onChange(async (value) => {
+      if (value === "custom")
+        return;
+      const preset = this.elevenPreset(value);
+      this.plugin.settings.elevenLabsStability = preset.stability;
+      this.plugin.settings.elevenLabsSimilarityBoost = preset.similarity;
+      this.plugin.settings.elevenLabsStyle = preset.style;
+      this.plugin.settings.elevenLabsSpeakerBoost = preset.boost;
+      await this.plugin.saveSettings();
+      this.display();
+      new import_obsidian10.Notice(`\u300C${value}\u300D \uD504\uB9AC\uC14B\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`);
+    }));
+    this.addUnitSlider(containerEl, "\uC548\uC815\uC131", "\uB192\uC744\uC218\uB85D \uC77C\uC815\uD558\uACE0, \uB0AE\uC744\uC218\uB85D \uBCC0\uD654\uAC00 \uD07D\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: 0.5.", this.plugin.settings.elevenLabsStability, 0.5, async (value) => {
+      this.plugin.settings.elevenLabsStability = value;
+      await this.plugin.saveSettings();
+    });
+    this.addUnitSlider(containerEl, "\uC720\uC0AC\uB3C4", "\uB192\uC744\uC218\uB85D \uC6D0\uBCF8 \uBAA9\uC18C\uB9AC\uC5D0 \uAC00\uAE5D\uC2B5\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: 0.75.", this.plugin.settings.elevenLabsSimilarityBoost, 0.75, async (value) => {
+      this.plugin.settings.elevenLabsSimilarityBoost = value;
+      await this.plugin.saveSettings();
+    });
+    this.addUnitSlider(containerEl, "\uC2A4\uD0C0\uC77C", "0\uC740 \uC911\uB9BD\uC785\uB2C8\uB2E4. v2 \uBAA8\uB378\uC5D0\uC11C\uB9CC \uC804\uB2EC\uB429\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: 0.", this.plugin.settings.elevenLabsStyle, 0, async (value) => {
+      this.plugin.settings.elevenLabsStyle = value;
+      await this.plugin.saveSettings();
+    });
+    new import_obsidian10.Setting(containerEl).setName("\uD654\uC790 \uBD80\uC2A4\uD2B8").setDesc("\uBA85\uB8CC\uB3C4\uB97C \uC62C\uB9BD\uB2C8\uB2E4. v2 \uBAA8\uB378\uC5D0\uC11C\uB9CC \uC804\uB2EC\uB429\uB2C8\uB2E4. \uAE30\uBCF8\uAC12: \uCF1C\uC9D0.").addToggle((toggle) => toggle.setValue(this.plugin.settings.elevenLabsSpeakerBoost).onChange(async (value) => {
+      this.plugin.settings.elevenLabsSpeakerBoost = value;
+      await this.plugin.saveSettings();
+    }));
+  }
+  addProviderKey(containerEl, provider) {
+    const meta = {
+      gemini: { name: "Gemini API \uD0A4", placeholder: "AIza\u2026", field: "geminiApiKey", label: "Gemini" },
+      xai: { name: "Grok API \uD0A4", placeholder: "xai-\u2026", field: "xaiApiKey", label: "Grok" },
+      openai: { name: "OpenAI API \uD0A4", placeholder: "sk-\u2026", field: "openaiApiKey", label: "OpenAI" },
+      anthropic: { name: "Claude API \uD0A4", placeholder: "sk-ant-\u2026", field: "anthropicApiKey", label: "Claude" }
+    }[provider];
+    this.addSecretField(containerEl, meta.name, "\uC785\uB825\uAC12\uC740 \uAC00\uB824\uC9D1\uB2C8\uB2E4. \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB294 \uD0A4\uB85C \uBAA9\uB85D \uC870\uD68C\uB9CC \uD569\uB2C8\uB2E4.", this.plugin.settings[meta.field], meta.placeholder, async (value) => {
+      this.plugin.settings[meta.field] = value;
+      await this.plugin.saveSettings();
+    }, () => this.testProviderKey(provider, this.plugin.settings[meta.field], meta.label));
+  }
+  addElevenKey(containerEl) {
+    this.addSecretField(containerEl, "ElevenLabs API \uD0A4", "\uC785\uB825\uAC12\uC740 \uAC00\uB824\uC9D1\uB2C8\uB2E4. \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB294 \uACC4\uC815 \uC870\uD68C\uB9CC \uD569\uB2C8\uB2E4.", this.plugin.settings.elevenLabsApiKey, "xi-\u2026", async (value) => {
+      this.plugin.settings.elevenLabsApiKey = value;
+      await this.plugin.saveSettings();
+    }, () => this.testProviderKey("elevenlabs", this.plugin.settings.elevenLabsApiKey, "ElevenLabs"));
+  }
+  addSecretField(containerEl, name, desc, value, placeholder, save, test2) {
+    new import_obsidian10.Setting(containerEl).setName(name).setDesc(desc).addText((text) => {
+      text.setPlaceholder(placeholder).setValue(value).onChange(async (raw) => {
+        const trimmed = raw.trim();
+        if (trimmed && trimmed.length < 8 && !/\s/.test(trimmed))
+          return;
+        const check = checkApiKey(raw);
+        if (!check.ok) {
+          new import_obsidian10.Notice(check.message);
+          return;
+        }
+        await save(check.value);
+      });
+      text.inputEl.type = "password";
+      return text;
+    }).addButton((button) => button.setButtonText("\uC5F0\uACB0 \uD14C\uC2A4\uD2B8").onClick(() => test2()));
+  }
+  async testProviderKey(provider, apiKey, label) {
+    let spec;
+    try {
+      spec = buildKeyProbe(provider, apiKey);
+    } catch (error) {
+      new import_obsidian10.Notice((error == null ? void 0 : error.message) || "API \uD0A4\uB97C \uC785\uB825\uD55C \uB4A4 \uC5F0\uACB0 \uD14C\uC2A4\uD2B8\uB97C \uB204\uB974\uC138\uC694.");
+      return;
+    }
+    try {
+      const response = await (0, import_obsidian10.requestUrl)({
+        url: spec.url,
+        method: "GET",
+        headers: spec.headers,
+        throw: false
+      });
+      const result = probeNotice(response.status, label);
+      new import_obsidian10.Notice(`${result.ok ? "\u2705" : "\u274C"} ${result.message}`);
+    } catch (error) {
+      new import_obsidian10.Notice(`\u274C ${label} \uC5F0\uACB0\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. ${redactSecrets((error == null ? void 0 : error.message) || "\uB124\uD2B8\uC6CC\uD06C\uB97C \uD655\uC778\uD558\uC138\uC694.")}`);
+    }
+  }
+  addGeminiVoice(containerEl) {
+    new import_obsidian10.Setting(containerEl).setName("Gemini \uBAA9\uC18C\uB9AC").setDesc("\uAE30\uBCF8\uAC12: Kore.").addDropdown((dropdown) => {
+      const female = dropdown.selectEl.createEl("optgroup", { attr: { label: "\uC5EC\uC131" } });
+      const male = dropdown.selectEl.createEl("optgroup", { attr: { label: "\uB0A8\uC131" } });
+      GEMINI_TTS_VOICES.forEach((voice) => {
+        const group = voice.gender === "F" ? female : male;
+        const option = group.createEl("option", { text: `${voice.name} (${voice.style})`, value: voice.name });
+        if (voice.name === this.plugin.settings.geminiTtsVoice)
+          option.selected = true;
+      });
+      return dropdown.onChange(async (value) => {
+        this.plugin.settings.geminiTtsVoice = value;
+        await this.plugin.saveSettings();
+      });
+    });
+  }
+  addGeminiLanguage(containerEl) {
+    new import_obsidian10.Setting(containerEl).setName("Gemini \uC74C\uC131 \uC5B8\uC5B4").setDesc("\uAE30\uBCF8\uAC12: \uC790\uB3D9.").addDropdown((dropdown) => {
+      GEMINI_TTS_LANGUAGES.forEach((lang) => dropdown.addOption(lang.code, lang.label));
+      return dropdown.setValue(this.plugin.settings.geminiTtsLanguage).onChange(async (value) => {
+        this.plugin.settings.geminiTtsLanguage = value;
+        await this.plugin.saveSettings();
+      });
+    });
+  }
+  addOpenAiVoice(containerEl) {
+    const known = OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice);
+    new import_obsidian10.Setting(containerEl).setName("OpenAI \uBAA9\uC18C\uB9AC").setDesc(`\uBAA9\uB85D\uC758 \uBAA9\uC18C\uB9AC. \uAE30\uBCF8\uAC12: ${DEFAULT_OPENAI_TTS_VOICE}.`).addDropdown((dropdown) => {
+      OPENAI_TTS_VOICES.forEach((voice) => dropdown.addOption(voice.id, voice.label));
+      return dropdown.setValue(known ? this.plugin.settings.openaiTtsVoice : DEFAULT_OPENAI_TTS_VOICE).onChange(async (value) => {
+        this.plugin.settings.openaiTtsVoice = value;
         await this.plugin.saveSettings();
         this.display();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Client Secret").setDesc("OAuth 2.0 Client Secret from Google Cloud Console").addText((text) => {
-        text.setPlaceholder("GOCSPX-...").setValue(this.plugin.settings.googleDriveClientSecret).onChange(async (value) => {
-          this.plugin.settings.googleDriveClientSecret = value;
-          await this.plugin.saveSettings();
-          this.display();
-        });
-        text.inputEl.type = "password";
-        return text;
       });
-      new import_obsidian10.Setting(containerEl).setName("Connection status").setHeading();
-      const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
-      const connectionSetting = new import_obsidian10.Setting(containerEl).setName("Google Drive Connection").setDesc(this.plugin.settings.googleDriveConnected ? "\u2705 Connected (token auto-refreshes)" : hasCredentials ? "\u{1F534} Not connected - Click to connect" : "\u26A0\uFE0F Enter Client ID and Secret above first");
-      if (!this.plugin.settings.googleDriveConnected) {
-        connectionSetting.addButton((button) => button.setButtonText("Connect with Google").setCta().setDisabled(!hasCredentials).onClick(async () => {
-          if (!hasCredentials) {
-            new import_obsidian10.Notice("\u26A0\uFE0F Please enter Client ID and Client Secret first");
-            return;
-          }
-          try {
-            new import_obsidian10.Notice("\u{1F504} Starting Google OAuth flow...");
-            const { GoogleOAuthFlow: GoogleOAuthFlow2 } = await Promise.resolve().then(() => (init_google_oauth_flow(), google_oauth_flow_exports));
-            const oauthFlow = new GoogleOAuthFlow2({
-              clientId: this.plugin.settings.googleDriveClientId,
-              clientSecret: this.plugin.settings.googleDriveClientSecret,
-              redirectPort: 8585
-            });
-            const tokens = await oauthFlow.startOAuthFlow();
-            this.plugin.settings.googleDriveToken = tokens.accessToken;
-            this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
-            this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
-            this.plugin.settings.googleDriveConnected = true;
-            await this.plugin.saveSettings();
-            new import_obsidian10.Notice("\u2705 Google Drive connected successfully!");
-            this.display();
-          } catch (error) {
-            console.error("OAuth error:", error);
-            new import_obsidian10.Notice(`\u274C Connection failed: ${error.message}`);
-          }
-        }));
-      } else {
-        const expiresAt = this.plugin.settings.googleDriveTokenExpiresAt;
-        if (expiresAt) {
-          const expiryDate = new Date(expiresAt);
-          const now = new Date();
-          const isExpired = now.getTime() >= expiresAt;
-          connectionSetting.setDesc(
-            isExpired ? "\u26A0\uFE0F Token expired - will auto-refresh on next use" : `\u2705 Connected (expires: ${expiryDate.toLocaleString()})`
-          );
-        }
-        connectionSetting.addButton((button) => button.setButtonText("Test Connection").onClick(async () => {
-          new import_obsidian10.Notice("\u{1F504} Testing Google Drive connection...");
-          try {
-            const { GoogleDriveClient: GoogleDriveClient2 } = await Promise.resolve().then(() => (init_google_drive_client(), google_drive_client_exports));
-            const client = new GoogleDriveClient2({
-              accessToken: this.plugin.settings.googleDriveToken,
-              refreshToken: this.plugin.settings.googleDriveRefreshToken,
-              tokenExpiresAt: this.plugin.settings.googleDriveTokenExpiresAt,
-              clientId: this.plugin.settings.googleDriveClientId,
-              clientSecret: this.plugin.settings.googleDriveClientSecret,
-              onTokenRefresh: async (tokens) => {
-                this.plugin.settings.googleDriveToken = tokens.accessToken;
-                this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
-                await this.plugin.saveSettings();
-                this.display();
-              }
-            });
-            const isConnected = await client.testConnection();
-            if (isConnected) {
-              const userInfo = await client.getUserInfo();
-              new import_obsidian10.Notice(`\u2705 Connected as ${(userInfo == null ? void 0 : userInfo.email) || "Unknown user"}`);
-            } else {
-              new import_obsidian10.Notice("\u274C Connection test failed");
-            }
-          } catch (error) {
-            new import_obsidian10.Notice(`\u274C Connection test failed: ${error.message}`);
-          }
-        })).addButton((button) => button.setButtonText("Disconnect").setWarning().onClick(async () => {
-          this.plugin.settings.googleDriveConnected = false;
-          this.plugin.settings.googleDriveToken = "";
-          this.plugin.settings.googleDriveRefreshToken = "";
-          this.plugin.settings.googleDriveTokenExpiresAt = 0;
-          this.plugin.settings.googleDriveFolderId = "";
-          await this.plugin.saveSettings();
-          this.display();
-          new import_obsidian10.Notice("\u{1F534} Disconnected from Google Drive");
-        }));
+    });
+    new import_obsidian10.Setting(containerEl).setName("OpenAI \uBAA9\uC18C\uB9AC ID").setDesc("\uBAA9\uB85D\uC5D0 \uC5C6\uB294 ID\uB97C \uC801\uC744 \uB54C \uC0AC\uC6A9\uD569\uB2C8\uB2E4. \uBE44\uC6B0\uBA74 \uC704 \uBAA9\uB85D\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.").addText((text) => text.setPlaceholder(DEFAULT_OPENAI_TTS_VOICE).setValue(known ? "" : this.plugin.settings.openaiTtsVoice).onChange(async (value) => {
+      const check = checkVoiceId(value, true);
+      if (!check.ok) {
+        new import_obsidian10.Notice(check.message);
+        return;
       }
-      new import_obsidian10.Setting(containerEl).setName("Link Format").setDesc("Choose how the audio link should be embedded in your note").addDropdown((dropdown) => dropdown.addOption("html", "HTML Audio Player (Recommended)").addOption("markdown", "Markdown Link").addOption("direct", "Direct URL").setValue(this.plugin.settings.linkFormat).onChange(async (value) => {
-        this.plugin.settings.linkFormat = value;
+      if (!check.value) {
+        this.plugin.settings.openaiTtsVoice = DEFAULT_OPENAI_TTS_VOICE;
         await this.plugin.saveSettings();
-      }));
-      new import_obsidian10.Setting(containerEl).setName("Google Drive Folder ID (Optional)").setDesc("Leave empty to upload to root, or paste folder ID from Drive URL").addText((text) => text.setPlaceholder("1a2b3c4d5e6f...").setValue(this.plugin.settings.googleDriveFolderId || "").onChange(async (value) => {
-        this.plugin.settings.googleDriveFolderId = value;
-        await this.plugin.saveSettings();
-      }));
-      const infoDiv = containerEl.createDiv("voice-briefing-info");
-      infoDiv.createEl("p", {
-        text: "\u{1F4A1} Tip: To find your folder ID, open the folder in Google Drive and copy the ID from the URL (the part after /folders/)",
-        cls: "setting-item-description"
+        return;
+      }
+      this.plugin.settings.openaiTtsVoice = check.value;
+      await this.plugin.saveSettings();
+    }));
+  }
+  addXaiVoice(containerEl) {
+    new import_obsidian10.Setting(containerEl).setName("Grok \uBAA9\uC18C\uB9AC").setDesc("\uAE30\uBCF8\uAC12: Sal.").addDropdown((dropdown) => {
+      const male = dropdown.selectEl.createEl("optgroup", { attr: { label: "\uB0A8\uC131" } });
+      const female = dropdown.selectEl.createEl("optgroup", { attr: { label: "\uC5EC\uC131" } });
+      XAI_TTS_VOICES.forEach((voice) => {
+        const group = voice.gender === "F" ? female : male;
+        const option = group.createEl("option", { text: `${voice.name} (${voice.style})`, value: voice.name });
+        if (voice.name === this.plugin.settings.xaiTtsVoice)
+          option.selected = true;
       });
+      return dropdown.onChange(async (value) => {
+        if (!value)
+          return;
+        this.plugin.settings.xaiTtsVoice = value;
+        await this.plugin.saveSettings();
+      });
+    });
+  }
+  addUnitSlider(containerEl, name, desc, value, fallback, save) {
+    new import_obsidian10.Setting(containerEl).setName(name).setDesc(desc).addSlider((slider) => slider.setLimits(0, 1, 0.01).setValue(clampUnitInterval(value, fallback)).setDynamicTooltip().onChange(async (next) => {
+      await save(clampUnitInterval(next, fallback));
+    }));
+  }
+  elevenPreset(value) {
+    if (value === "lecture")
+      return { stability: 0.75, similarity: 0.75, style: 0, boost: true };
+    if (value === "news")
+      return { stability: 0.85, similarity: 0.75, style: 0, boost: true };
+    if (value === "story")
+      return { stability: 0.4, similarity: 0.75, style: 0.45, boost: true };
+    if (value === "asmr")
+      return { stability: 0.5, similarity: 0.9, style: 0, boost: false };
+    return { stability: 0.5, similarity: 0.75, style: 0, boost: true };
+  }
+  async loginDrive() {
+    if (!this.plugin.settings.googleDriveClientId || !this.plugin.settings.googleDriveClientSecret) {
+      new import_obsidian10.Notice("\uD074\uB77C\uC774\uC5B8\uD2B8 ID\uC640 \uC2DC\uD06C\uB9BF\uC744 \uBA3C\uC800 \uC785\uB825\uD558\uC138\uC694.");
+      return;
+    }
+    try {
+      new import_obsidian10.Notice("Google \uB85C\uADF8\uC778 \uCC3D\uC744 \uC5FD\uB2C8\uB2E4.");
+      const { GoogleOAuthFlow: GoogleOAuthFlow2 } = await Promise.resolve().then(() => (init_google_oauth_flow(), google_oauth_flow_exports));
+      const oauthFlow = new GoogleOAuthFlow2({
+        clientId: this.plugin.settings.googleDriveClientId,
+        clientSecret: this.plugin.settings.googleDriveClientSecret,
+        redirectPort: 8585
+      });
+      const tokens = await oauthFlow.startOAuthFlow();
+      this.plugin.settings.googleDriveToken = tokens.accessToken;
+      this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
+      this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+      this.plugin.settings.googleDriveConnected = true;
+      await this.plugin.saveSettings();
+      new import_obsidian10.Notice("\u2705 \uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C\uC5D0 \uB85C\uADF8\uC778\uD588\uC2B5\uB2C8\uB2E4.");
+      this.display();
+    } catch (error) {
+      new import_obsidian10.Notice(`\u274C \uB85C\uADF8\uC778\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. ${redactSecrets((error == null ? void 0 : error.message) || "")}`);
+    }
+  }
+  async logoutDrive() {
+    this.plugin.settings.googleDriveConnected = false;
+    this.plugin.settings.googleDriveToken = "";
+    this.plugin.settings.googleDriveRefreshToken = "";
+    this.plugin.settings.googleDriveTokenExpiresAt = 0;
+    await this.plugin.saveSettings();
+    this.display();
+    new import_obsidian10.Notice("\uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C\uC5D0\uC11C \uB85C\uADF8\uC544\uC6C3\uD588\uC2B5\uB2C8\uB2E4. \uD3F4\uB354 ID\uB294 \uADF8\uB300\uB85C \uB461\uB2C8\uB2E4.");
+  }
+  async testDrive() {
+    try {
+      const { GoogleDriveClient: GoogleDriveClient2 } = await Promise.resolve().then(() => (init_google_drive_client(), google_drive_client_exports));
+      const client = new GoogleDriveClient2({
+        accessToken: this.plugin.settings.googleDriveToken,
+        refreshToken: this.plugin.settings.googleDriveRefreshToken,
+        tokenExpiresAt: this.plugin.settings.googleDriveTokenExpiresAt,
+        clientId: this.plugin.settings.googleDriveClientId,
+        clientSecret: this.plugin.settings.googleDriveClientSecret,
+        onTokenRefresh: async (tokens) => {
+          this.plugin.settings.googleDriveToken = tokens.accessToken;
+          this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+          if (tokens.refreshToken)
+            this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
+          await this.plugin.saveSettings();
+        }
+      });
+      const isConnected = await client.testConnection();
+      if (!isConnected) {
+        new import_obsidian10.Notice("\u274C \uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C \uC5F0\uACB0\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
+        return;
+      }
+      const userInfo = await client.getUserInfo();
+      new import_obsidian10.Notice(`\u2705 ${(userInfo == null ? void 0 : userInfo.email) || "\uACC4\uC815"}\uC73C\uB85C \uC5F0\uACB0\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4.`);
+    } catch (error) {
+      new import_obsidian10.Notice(`\u274C \uAD6C\uAE00 \uB4DC\uB77C\uC774\uBE0C \uC5F0\uACB0\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. ${redactSecrets((error == null ? void 0 : error.message) || "")}`);
     }
   }
   // Get current provider's API key
@@ -6258,35 +6396,39 @@ var VoiceBriefingSettingTab = class extends import_obsidian10.PluginSettingTab {
       this.plugin.saveSettings();
     }
   }
-  addModelPicker(containerEl, name, desc, models, current, apply) {
+  addModelPicker(containerEl, name, desc, models, defaultId, current, apply) {
     var _a;
     const known = models.some((model) => model.id === current);
-    let selected = known ? current : ((_a = models[0]) == null ? void 0 : _a.id) || "";
+    let selected = known ? current : ((_a = models[0]) == null ? void 0 : _a.id) || defaultId;
     let custom = known ? "" : current;
-    const save = async () => {
-      const next = custom.trim() || selected;
-      if (!next)
+    const save = async (next) => {
+      const check = checkModelId(next, false);
+      if (!check.ok) {
+        new import_obsidian10.Notice(check.message);
         return;
-      await apply(next);
+      }
+      await apply(check.value);
     };
-    new import_obsidian10.Setting(containerEl).setName(name).setDesc(desc).addDropdown((dropdown) => {
+    new import_obsidian10.Setting(containerEl).setName(name).setDesc(`${desc} \uAE30\uBCF8\uAC12: ${defaultId}.`).addDropdown((dropdown) => {
       models.forEach((model) => dropdown.addOption(model.id, model.label));
       if (!known && current)
-        dropdown.addOption(current, `${current} (saved)`);
+        dropdown.addOption(current, `${current} (\uC800\uC7A5\uB428)`);
       return dropdown.setValue(known ? selected : current || selected).onChange(async (value) => {
         selected = value;
         custom = "";
-        await save();
+        await save(selected);
         this.display();
       });
     });
-    new import_obsidian10.Setting(containerEl).setName(`${name} \u2014 custom ID`).setDesc("Type a model ID to override the dropdown. Leave empty to use the list.").addText((text) => {
-      var _a2;
-      return text.setPlaceholder(((_a2 = models[0]) == null ? void 0 : _a2.id) || "model-id").setValue(custom).onChange(async (value) => {
-        custom = value;
-        await save();
-      });
-    });
+    new import_obsidian10.Setting(containerEl).setName(`${name} \uC9C1\uC811 \uC785\uB825`).setDesc("\uBE44\uC6B0\uBA74 \uC704 \uBAA9\uB85D\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4. \uC801\uC740 ID\uB294 \uBAA9\uB85D\uBCF4\uB2E4 \uC6B0\uC120\uD569\uB2C8\uB2E4.").addText((text) => text.setPlaceholder(defaultId).setValue(custom).onChange(async (value) => {
+      const check = checkModelId(value, true);
+      if (!check.ok) {
+        new import_obsidian10.Notice(check.message);
+        return;
+      }
+      custom = check.value;
+      await save(custom || selected);
+    }));
   }
   addEdgeVoiceOptions(dropdown) {
     const lang = this.plugin.settings.language;
