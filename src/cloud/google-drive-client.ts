@@ -1,5 +1,8 @@
 import { Notice, requestUrl } from 'obsidian';
-import { GoogleOAuthFlow, OAuthTokens } from './google-oauth-flow';
+import { readDesktopFile } from '../desktop/files';
+import { redactSecrets } from '../ai/extract-text';
+import { GoogleOAuthFlow } from './google-oauth-flow';
+import type { OAuthTokens } from './oauth-protocol';
 
 export interface GoogleDriveConfig {
 	clientId?: string;
@@ -42,7 +45,7 @@ export class GoogleDriveClient {
 		// Check if token is expired or about to expire
 		if (this.config.tokenExpiresAt && this.config.refreshToken && this.oauthFlow) {
 			if (this.oauthFlow.isTokenExpired(this.config.tokenExpiresAt)) {
-				console.log('Access token expired or expiring soon, refreshing...');
+				console.debug('Google Drive access token is due for refresh');
 				try {
 					const newTokens = await this.oauthFlow.refreshAccessToken(this.config.refreshToken);
 
@@ -57,7 +60,7 @@ export class GoogleDriveClient {
 
 					new Notice('🔄 Google Drive token refreshed automatically');
 				} catch (error: any) {
-					console.error('Token refresh failed:', error);
+					console.error('Token refresh failed:', redactSecrets(error?.message || 'unknown error'));
 					throw new Error('Token refresh failed. Please reconnect Google Drive.');
 				}
 			}
@@ -71,9 +74,7 @@ export class GoogleDriveClient {
 			// Ensure we have a valid token before uploading
 			const accessToken = await this.ensureValidToken();
 
-			// Read file content
-			const fs = require('fs');
-			const fileContent = fs.readFileSync(filePath);
+			const fileContent = readDesktopFile(filePath);
 
 			// Step 1: Create file metadata
 			const metadata = {
@@ -145,7 +146,7 @@ export class GoogleDriveClient {
 				downloadUrl
 			};
 		} catch (error: any) {
-			console.error('Google Drive upload error:', error);
+			console.error('Google Drive upload error:', redactSecrets(error?.message || 'unknown error'));
 
 			if (error.message.includes('401')) {
 				return {

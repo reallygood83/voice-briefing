@@ -1,16 +1,17 @@
-name: Release Obsidian Plugin
+name: Release Obsidian plugin
 
 on:
   push:
     tags:
       - "*"
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v3
@@ -18,21 +19,29 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: "18.x"
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Build plugin
+        run: |
+          npm install
+          npm test
+          npm run lint
+          npm run build
 
-      - name: Build
-        run: npm run build
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
         with:
-          files: |
+          subject-path: |
             main.js
             manifest.json
             styles.css
+
+      - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title="$tag" \
+            --draft \
+            main.js manifest.json styles.css

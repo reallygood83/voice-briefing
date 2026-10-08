@@ -1,8 +1,5 @@
 import { Notice } from 'obsidian';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { execDesktop } from '../desktop/files';
 
 export interface EdgeTTSOptions {
 	voice: string;
@@ -19,7 +16,7 @@ export class EdgeTTSHandler {
 			// Generate audio using edge-tts CLI
 			const command = `edge-tts --voice "${options.voice}" --text "${this.escapeText(options.text)}" --write-media "${options.outputPath}"`;
 
-			await execAsync(command);
+			await execDesktop(command);
 
 			new Notice('✅ Audio generated successfully with Edge TTS');
 		} catch (error: any) {
@@ -35,7 +32,7 @@ export class EdgeTTSHandler {
 
 	private async checkEdgeTTSInstalled(): Promise<void> {
 		try {
-			await execAsync('edge-tts --help');
+			await execDesktop('edge-tts --help');
 		} catch (error) {
 			throw new Error('edge-tts: command not found');
 		}
@@ -52,7 +49,7 @@ export class EdgeTTSHandler {
 
 	async listVoices(): Promise<string[]> {
 		try {
-			const { stdout } = await execAsync('edge-tts --list-voices');
+			const { stdout } = await execDesktop('edge-tts --list-voices');
 			const voices = stdout.split('\n')
 				.filter(line => line.includes('Name:'))
 				.map(line => {

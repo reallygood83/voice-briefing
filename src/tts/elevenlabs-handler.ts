@@ -1,5 +1,8 @@
 import { Notice, requestUrl } from 'obsidian';
-import { writeFile } from 'fs/promises';
+import { writeDesktopFile } from '../desktop/files';
+import { assertElevenLabsTextLength } from './elevenlabs-limits';
+import { redactSecrets } from '../ai/extract-text';
+import { DEFAULT_ELEVENLABS_MODEL } from '../models/catalog';
 
 interface VoiceSettings {
 	stability: number;
@@ -19,18 +22,14 @@ export interface ElevenLabsOptions {
 
 export class ElevenLabsHandler {
 	private readonly API_URL = 'https://api.elevenlabs.io/v1';
-	private readonly MAX_TEXT_LENGTH = 5000;
 
 	async generate(options: ElevenLabsOptions): Promise<void> {
 		this.validateOptions(options);
 
-		if (options.text.length > this.MAX_TEXT_LENGTH) {
-			console.warn(`Text length (${options.text.length}) exceeds limit. Truncating.`);
-			options.text = options.text.substring(0, this.MAX_TEXT_LENGTH);
-		}
+		const modelId = options.modelId || DEFAULT_ELEVENLABS_MODEL;
+		assertElevenLabsTextLength(options.text, modelId);
 
 		try {
-			const modelId = options.modelId || 'eleven_multilingual_v2';
 			const voiceSettings = this.buildVoiceSettings(options.voiceSettings, modelId);
 
 			const requestBody = {
@@ -39,7 +38,7 @@ export class ElevenLabsHandler {
 				voice_settings: voiceSettings
 			};
 
-			console.log('ElevenLabs request:', {
+			console.debug('ElevenLabs request:', {
 				url: `${this.API_URL}/text-to-speech/${options.voiceId}`,
 				modelId,
 				textLength: options.text.length,
@@ -63,11 +62,11 @@ export class ElevenLabsHandler {
 			}
 
 			const buffer = Buffer.from(response.arrayBuffer);
-			await writeFile(options.outputPath, buffer);
+			await writeDesktopFile(options.outputPath, buffer);
 
 			new Notice('✅ Audio generated successfully with ElevenLabs');
 		} catch (error: any) {
-			console.error('ElevenLabs error:', error);
+			console.error('ElevenLabs error:', redactSecrets(error?.message || 'unknown error'));
 
 			if (error.message.startsWith('ElevenLabs')) {
 				throw error;

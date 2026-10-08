@@ -12,6 +12,7 @@
  */
 
 import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal, requestUrl } from 'obsidian';
+import { ensureBriefingAudioPath } from './src/desktop/files';
 
 // Progress Modal for showing generation progress
 class ProgressModal extends Modal {
@@ -124,11 +125,13 @@ class ProgressModal extends Modal {
 		});
 
 		const percentage = Math.round((completedSteps / totalSteps) * 100);
+		this.progressBar.removeClass('is-complete');
 		this.progressBar.style.width = `${percentage}%`;
 		this.statusText.textContent = `${percentage}%`;
 	}
 
 	setProgress(percentage: number) {
+		this.progressBar.removeClass('is-complete');
 		this.progressBar.style.width = `${percentage}%`;
 		this.statusText.textContent = `${Math.round(percentage)}%`;
 	}
@@ -139,7 +142,8 @@ class ProgressModal extends Modal {
 
 	showSuccess(message: string) {
 		this.currentStepEl.textContent = message;
-		this.progressBar.style.width = '100%';
+		this.progressBar.style.removeProperty('width');
+		this.progressBar.addClass('is-complete');
 		this.statusText.textContent = '100%';
 	}
 
@@ -156,6 +160,39 @@ class ProgressModal extends Modal {
 // Import Gemini TTS voices and languages
 import { GEMINI_TTS_VOICES, GEMINI_TTS_LANGUAGES } from './src/tts/gemini-tts-handler';
 import { XAI_TTS_VOICES } from './src/tts/xai-tts-handler';
+import {
+	ANTHROPIC_TEXT_MODELS,
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_ELEVENLABS_MODEL,
+	DEFAULT_GEMINI_TEXT_MODEL,
+	DEFAULT_GEMINI_TTS_MODEL,
+	DEFAULT_OPENAI_TEXT_MODEL,
+	DEFAULT_OPENAI_TTS_MODEL,
+	DEFAULT_OPENAI_TTS_VOICE,
+	DEFAULT_XAI_TEXT_MODEL,
+	ELEVENLABS_MODELS,
+	GEMINI_TEXT_MODELS,
+	GEMINI_TTS_MODELS,
+	OPENAI_TEXT_MODELS,
+	OPENAI_TTS_MODELS,
+	OPENAI_TTS_VOICES,
+	XAI_TEXT_MODELS,
+	type ModelOption
+} from './src/models/catalog';
+import { redactSecrets } from './src/ai/extract-text';
+import { migrateModelSettings } from './src/settings/migrate-settings';
+import {
+	buildKeyProbe,
+	checkApiKey,
+	checkClientId,
+	checkFolderId,
+	checkModelId,
+	checkVoiceId,
+	clampUnitInterval,
+	probeNotice,
+	type AiProvider,
+	type TtsEngine
+} from './src/settings/settings-form';
 
 // Quick Options Modal - Neo-Brutalism Style
 class QuickOptionsModal extends Modal {
@@ -196,13 +233,14 @@ class QuickOptionsModal extends Modal {
 		this.createSection(formEl, '🔊 TTS Engine', (container) => {
 			const engines = [
 				{ value: 'gemini', label: '🤖 Gemini TTS (Recommended)' },
+				{ value: 'openai', label: '🟢 OpenAI TTS' },
 				{ value: 'xai', label: '🚀 xAI Grok TTS (Premium)' },
 				{ value: 'edge', label: '🔷 Edge TTS (Free)' },
 				{ value: 'elevenlabs', label: '🟣 ElevenLabs (Premium)' }
 			];
 
 			this.createCustomDropdown(container, engines, this.currentOptions.ttsEngine, (value) => {
-				this.currentOptions.ttsEngine = value as 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+				this.currentOptions.ttsEngine = value as 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 				this.refreshForm();
 			});
 		});
@@ -333,7 +371,15 @@ class QuickOptionsModal extends Modal {
 		if (this.currentOptions.ttsEngine === 'elevenlabs') {
 			const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
 			noteEl.createEl('p', {
-				text: '💡 ElevenLabs uses settings from Plugin Settings page.',
+				text: `💡 ElevenLabs uses the voice and model (${this.settings.elevenLabsModelId || DEFAULT_ELEVENLABS_MODEL}) from Plugin Settings.`,
+				cls: 'voice-briefing-note-text'
+			});
+		}
+
+		if (this.currentOptions.ttsEngine === 'openai') {
+			const noteEl = formEl.createDiv({ cls: 'voice-briefing-note' });
+			noteEl.createEl('p', {
+				text: `💡 OpenAI TTS uses ${this.settings.openaiTtsModel || DEFAULT_OPENAI_TTS_MODEL} / ${this.settings.openaiTtsVoice || DEFAULT_OPENAI_TTS_VOICE} from Plugin Settings.`,
 				cls: 'voice-briefing-note-text'
 			});
 		}
@@ -371,7 +417,7 @@ class QuickOptionsModal extends Modal {
 			});
 
 			const hintEl = container.createDiv({ cls: 'voice-briefing-hint' });
-			hintEl.createEl('span', {
+			hintEl.createSpan({
 				text: '💡 Leave empty to use default prompt from settings',
 				cls: 'voice-briefing-hint-text'
 			});
@@ -436,8 +482,7 @@ class QuickOptionsModal extends Modal {
 		arrow.textContent = '▼';
 
 		// Options list (hidden by default)
-		const optionsList = wrapper.createDiv({ cls: 'voice-briefing-dropdown-options' });
-		optionsList.style.display = 'none';
+		const optionsList = wrapper.createDiv({ cls: 'voice-briefing-dropdown-options is-closed' });
 
 		// Group options if they have groups
 		const groups = new Map<string, { value: string; label: string }[]>();
@@ -483,7 +528,7 @@ class QuickOptionsModal extends Modal {
 		const toggleDropdown = (e: Event) => {
 			e.stopPropagation();
 			isOpen = !isOpen;
-			optionsList.style.display = isOpen ? 'block' : 'none';
+			optionsList.toggleClass('is-closed', !isOpen);
 			wrapper.classList.toggle('open', isOpen);
 		};
 
@@ -505,7 +550,7 @@ class QuickOptionsModal extends Modal {
 
 				// Close dropdown
 				isOpen = false;
-				optionsList.style.display = 'none';
+				optionsList.addClass('is-closed');
 				wrapper.classList.remove('open');
 
 				// Trigger change callback
@@ -517,7 +562,7 @@ class QuickOptionsModal extends Modal {
 		const closeDropdown = (e: Event) => {
 			if (!wrapper.contains(e.target as Node)) {
 				isOpen = false;
-				optionsList.style.display = 'none';
+				optionsList.addClass('is-closed');
 				wrapper.classList.remove('open');
 			}
 		};
@@ -565,10 +610,11 @@ interface VoiceBriefingSettings {
 	modelName?: string;
 
 	// TTS Settings
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 	edgeVoice: string;
 	elevenLabsApiKey: string;
 	elevenLabsVoiceId: string;
+	elevenLabsModelId: string;
 	elevenLabsStability: number;
 	elevenLabsSimilarityBoost: number;
 	elevenLabsStyle: number;
@@ -577,6 +623,11 @@ interface VoiceBriefingSettings {
 	// Gemini TTS Settings
 	geminiTtsVoice: string;
 	geminiTtsLanguage: string;
+	geminiTtsModel: string;
+
+	// OpenAI TTS Settings
+	openaiTtsModel: string;
+	openaiTtsVoice: string;
 
 	// xAI TTS Settings
 	xaiTtsVoice: string;
@@ -595,7 +646,7 @@ interface VoiceBriefingSettings {
 
 // Quick Options interface for modal
 interface QuickOptions {
-	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai';
+	ttsEngine: 'edge' | 'elevenlabs' | 'gemini' | 'xai' | 'openai';
 	geminiVoice: string;
 	geminiLanguage: string;
 	edgeVoice: string;
@@ -617,15 +668,16 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	anthropicApiKey: '',
 
 	// Provider-specific Models
-	geminiModel: 'gemini-2.0-flash',
-	xaiModel: 'grok-4-1-fast',
-	openaiModel: 'gpt-4o',
-	anthropicModel: 'claude-3-5-sonnet-20241022',
+	geminiModel: DEFAULT_GEMINI_TEXT_MODEL,
+	xaiModel: DEFAULT_XAI_TEXT_MODEL,
+	openaiModel: DEFAULT_OPENAI_TEXT_MODEL,
+	anthropicModel: DEFAULT_ANTHROPIC_TEXT_MODEL,
 
 	ttsEngine: 'gemini',
 	edgeVoice: 'ko-KR-SunHiNeural',
 	elevenLabsApiKey: '',
 	elevenLabsVoiceId: '',
+	elevenLabsModelId: DEFAULT_ELEVENLABS_MODEL,
 	elevenLabsStability: 0.5,
 	elevenLabsSimilarityBoost: 0.75,
 	elevenLabsStyle: 0.0,
@@ -634,6 +686,9 @@ const DEFAULT_SETTINGS: VoiceBriefingSettings = {
 	// Gemini TTS defaults
 	geminiTtsVoice: 'Kore',
 	geminiTtsLanguage: 'auto',
+	geminiTtsModel: DEFAULT_GEMINI_TTS_MODEL,
+	openaiTtsModel: DEFAULT_OPENAI_TTS_MODEL,
+	openaiTtsVoice: DEFAULT_OPENAI_TTS_VOICE,
 
 	// xAI TTS defaults
 	xaiTtsVoice: 'Sal',
@@ -656,14 +711,14 @@ export default class VoiceBriefingPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Add ribbon icon
-		this.addRibbonIcon('mic', 'Generate Voice Briefing', async () => {
+		this.addRibbonIcon('mic', 'Generate briefing', async () => {
 			await this.generateVoiceBriefing();
 		});
 
 		// Add command
 		this.addCommand({
-			id: 'generate-voice-briefing',
-			name: 'Generate Voice Briefing',
+			id: 'generate-briefing',
+			name: 'Generate briefing',
 			callback: async () => {
 				await this.generateVoiceBriefing();
 			}
@@ -672,7 +727,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 		// Add settings tab
 		this.addSettingTab(new VoiceBriefingSettingTab(this.app, this));
 
-		console.log('Voice Briefing Plugin loaded');
+		console.debug('Voice Briefing Plugin loaded');
 	}
 
 	async generateVoiceBriefing() {
@@ -708,6 +763,11 @@ export default class VoiceBriefingPlugin extends Plugin {
 				new Notice('Please set your ElevenLabs voice ID in settings');
 				return;
 			}
+		}
+
+		if (options.ttsEngine === 'openai' && !this.settings.openaiApiKey) {
+			new Notice('Please set your OpenAI API key in settings');
+			return;
 		}
 
 		if (options.ttsEngine === 'gemini') {
@@ -746,14 +806,21 @@ export default class VoiceBriefingPlugin extends Plugin {
 				customPrompt: effectiveCustomPrompt,
 				provider: this.settings.aiProvider,
 				apiKey: this.getCurrentApiKey(),
-				modelName: this.getCurrentModel()
+				modelName: this.getCurrentModel(),
+				onStatus: (message) => new Notice(message)
 			});
 
 			progressModal.setStep('script', 'completed', `Script generated (~${scriptResult.estimatedDuration}s audio)`);
 
 			// Step 2: Convert script to audio with TTS
-			const ttsEngineLabel = options.ttsEngine === 'edge' ? 'Edge TTS' :
-				options.ttsEngine === 'gemini' ? 'Gemini TTS' : 'ElevenLabs';
+			const ttsEngineLabels: Record<QuickOptions['ttsEngine'], string> = {
+				edge: 'Edge TTS',
+				gemini: 'Gemini TTS',
+				xai: 'xAI TTS',
+				openai: 'OpenAI TTS',
+				elevenlabs: 'ElevenLabs'
+			};
+			const ttsEngineLabel = ttsEngineLabels[options.ttsEngine];
 			progressModal.setStep('audio', 'active', `Converting to audio with ${ttsEngineLabel}...`);
 
 			const { TTSGenerator } = await import('./src/tts/tts-generator');
@@ -761,20 +828,10 @@ export default class VoiceBriefingPlugin extends Plugin {
 
 			// Prepare audio file path with ABSOLUTE path
 			// Note: Gemini TTS outputs .wav, Edge/ElevenLabs output .mp3
-			const audioExtension = options.ttsEngine === 'gemini' ? 'wav' : 'mp3';
+			const audioExtension = options.ttsEngine === 'gemini' || options.ttsEngine === 'xai' ? 'wav' : 'mp3';
 			const audioFileName = `${activeFile.basename}-briefing.${audioExtension}`;
-			const fs = require('fs');
-			const path = require('path');
-
-			// Get vault's absolute base path
 			const vaultBasePath = (this.app.vault.adapter as any).basePath;
-			const audioDir = path.join(vaultBasePath, this.app.vault.configDir, 'voice-briefings');
-			const audioPath = path.join(audioDir, audioFileName);
-
-			// Ensure directory exists
-			if (!fs.existsSync(audioDir)) {
-				fs.mkdirSync(audioDir, { recursive: true });
-			}
+			const audioPath = ensureBriefingAudioPath(vaultBasePath, this.app.vault.configDir, audioFileName);
 
 			const ttsResult = await ttsGenerator.generate({
 				engine: options.ttsEngine,
@@ -783,6 +840,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 				edgeVoice: options.edgeVoice,
 				elevenLabsApiKey: this.settings.elevenLabsApiKey,
 				elevenLabsVoiceId: this.settings.elevenLabsVoiceId,
+				elevenLabsModelId: this.settings.elevenLabsModelId,
 				elevenLabsStability: this.settings.elevenLabsStability,
 				elevenLabsSimilarityBoost: this.settings.elevenLabsSimilarityBoost,
 				elevenLabsStyle: this.settings.elevenLabsStyle,
@@ -791,9 +849,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 					geminiApiKey: this.settings.geminiApiKey,
 					geminiVoice: options.geminiVoice,
 					geminiLanguage: options.geminiLanguage,
+					geminiModel: this.settings.geminiTtsModel,
 					// xAI TTS options
 				xaiApiKey: this.settings.xaiApiKey,
-				xaiVoice: options.xaiVoice
+				xaiVoice: options.xaiVoice,
+				openaiApiKey: this.settings.openaiApiKey,
+				openaiTtsModel: this.settings.openaiTtsModel,
+				openaiTtsVoice: this.settings.openaiTtsVoice
 			});
 
 			if (!ttsResult.success) {
@@ -824,7 +886,8 @@ export default class VoiceBriefingPlugin extends Plugin {
 					}
 				});
 
-				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, 'audio/mpeg');
+				const audioMime = audioExtension === 'wav' ? 'audio/wav' : 'audio/mpeg';
+				const uploadResult = await driveClient.uploadFile(audioPath, audioFileName, audioMime);
 
 				if (uploadResult.success && uploadResult.fileId) {
 					// Google Drive audio embed - using the embed player URL format
@@ -858,13 +921,13 @@ export default class VoiceBriefingPlugin extends Plugin {
 `;
 
 					progressModal.setStep('upload', 'completed', 'Uploaded to Google Drive');
-					console.log('Audio embed created with fileId:', uploadResult.fileId);
-					console.log('Embed URL:', driveEmbedUrl);
+					console.debug('Audio embed created with fileId:', uploadResult.fileId);
+					console.debug('Embed URL:', driveEmbedUrl);
 				} else {
 					// Fallback to local file
 					progressModal.setStep('upload', 'error', 'Cloud upload failed, using local file');
 					audioEmbed = `\n\n## 🎧 Voice Briefing\n\n![[${audioFileName}]]\n\n*Generated on ${new Date().toLocaleString()} • Duration: ~${scriptResult.estimatedDuration}s*\n*⚠️ Cloud upload failed - audio stored locally only*\n`;
-					console.log('Fallback to local file embed');
+					console.debug('Fallback to local file embed');
 				}
 			} else {
 				// Local file only
@@ -874,9 +937,9 @@ export default class VoiceBriefingPlugin extends Plugin {
 			// Step 4: Embed audio in note (right after YAML frontmatter/properties)
 			progressModal.setStep('embed', 'active', 'Embedding audio in note...');
 
-			console.log('Attempting to embed audio in note...');
-			console.log('Current content length:', content.length);
-			console.log('Audio embed to add:', audioEmbed);
+			console.debug('Attempting to embed audio in note...');
+			console.debug('Current content length:', content.length);
+			console.debug('Audio embed to add:', audioEmbed);
 
 			// Find the position right after YAML frontmatter (properties)
 			// YAML frontmatter starts with --- and ends with ---
@@ -890,17 +953,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 				const beforeEmbed = content.substring(0, frontmatterEnd);
 				const afterEmbed = content.substring(frontmatterEnd);
 				newContent = beforeEmbed + audioEmbed + '\n' + afterEmbed;
-				console.log('Inserted audio embed after YAML frontmatter');
+				console.debug('Inserted audio embed after YAML frontmatter');
 			} else {
 				// No frontmatter found, insert at the beginning
 				newContent = audioEmbed + '\n' + content;
-				console.log('No frontmatter found, inserted at beginning');
+				console.debug('No frontmatter found, inserted at beginning');
 			}
 
-			console.log('New content length:', newContent.length);
+			console.debug('New content length:', newContent.length);
 
 			await this.app.vault.modify(activeFile, newContent);
-			console.log('Note modified successfully');
+			console.debug('Note modified successfully');
 
 			progressModal.setStep('embed', 'completed', 'Audio embedded in note');
 
@@ -908,7 +971,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 			progressModal.showSuccess('✅ Voice briefing generated successfully!');
 
 			// Auto-close modal after 2 seconds
-			setTimeout(() => {
+			window.setTimeout(() => {
 				progressModal.close();
 			}, 2000);
 
@@ -924,11 +987,17 @@ export default class VoiceBriefingPlugin extends Plugin {
 	}
 
 	onunload() {
-		console.log('Voice Briefing Plugin unloaded');
+		console.debug('Voice Briefing Plugin unloaded');
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const merged = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const changes = migrateModelSettings(merged);
+		this.settings = merged;
+		if (changes.length > 0) {
+			console.debug(`Voice Briefing migrated saved models: ${changes.join('; ')}`);
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings() {
@@ -965,7 +1034,7 @@ export default class VoiceBriefingPlugin extends Plugin {
 			case 'anthropic':
 				return this.settings.anthropicModel;
 			default:
-				return 'gemini-2.0-flash';
+				return DEFAULT_GEMINI_TEXT_MODEL;
 		}
 	}
 }
@@ -981,728 +1050,655 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		containerEl.addClass('voice-briefing-settings');
 
-		// Header
-		containerEl.createEl('h1', { text: 'Voice Briefing Settings' });
+		this.renderAiSection(containerEl);
+		this.renderTtsSection(containerEl);
+		this.renderBriefingSection(containerEl);
+		this.renderDriveSection(containerEl);
+		this.renderAdvancedSection(containerEl);
+	}
 
-		// ====================
-		// GENERAL SETTINGS
-		// ====================
-		containerEl.createEl('h2', { text: '🌐 General Settings' });
+	private renderAiSection(containerEl: HTMLElement): void {
+		const provider = this.plugin.settings.aiProvider;
+		new Setting(containerEl).setName('AI 원고 생성').setHeading();
+		containerEl.createDiv({
+			cls: 'voice-briefing-settings-note',
+			text: '고른 서비스의 키와 모델만 표시합니다. 다른 서비스에 저장해 둔 키는 지우지 않습니다.'
+		});
 
-		// Language Setting
 		new Setting(containerEl)
-			.setName('Output Language')
-			.setDesc('Select the language for voice briefing generation')
+			.setName('원고 서비스')
+			.setDesc('대본을 만들 서비스. 기본값: Gemini.')
 			.addDropdown(dropdown => dropdown
-				.addOption('ko-KR', '🇰🇷 한국어 (Korean)')
-				.addOption('en-US', '🇺🇸 English (US)')
-				.addOption('ja-JP', '🇯🇵 日本語 (Japanese)')
-				.addOption('zh-CN', '🇨🇳 中文 (Chinese)')
-				.addOption('es-ES', '🇪🇸 Español (Spanish)')
-				.addOption('fr-FR', '🇫🇷 Français (French)')
-				.addOption('de-DE', '🇩🇪 Deutsch (German)')
+				.addOption('gemini', 'Gemini')
+				.addOption('xai', 'Grok')
+				.addOption('openai', 'OpenAI')
+				.addOption('anthropic', 'Claude')
+				.setValue(provider)
+				.onChange(async (value: AiProvider) => {
+					this.plugin.settings.aiProvider = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}));
+
+		this.addProviderKey(containerEl, provider);
+		if (provider === 'gemini') {
+			this.addModelPicker(containerEl, 'Gemini 모델', '대본 모델', GEMINI_TEXT_MODELS, DEFAULT_GEMINI_TEXT_MODEL, this.plugin.settings.geminiModel, async (modelId) => {
+				this.plugin.settings.geminiModel = modelId;
+				await this.plugin.saveSettings();
+			});
+		} else if (provider === 'xai') {
+			this.addModelPicker(containerEl, 'Grok 모델', '대본 모델', XAI_TEXT_MODELS, DEFAULT_XAI_TEXT_MODEL, this.plugin.settings.xaiModel, async (modelId) => {
+				this.plugin.settings.xaiModel = modelId;
+				await this.plugin.saveSettings();
+			});
+		} else if (provider === 'openai') {
+			this.addModelPicker(containerEl, 'OpenAI 모델', '대본 모델. GPT-6 ID는 Responses API를 사용합니다.', OPENAI_TEXT_MODELS, DEFAULT_OPENAI_TEXT_MODEL, this.plugin.settings.openaiModel, async (modelId) => {
+				this.plugin.settings.openaiModel = modelId;
+				await this.plugin.saveSettings();
+			});
+		} else {
+			this.addModelPicker(containerEl, 'Claude 모델', '대본 모델', ANTHROPIC_TEXT_MODELS, DEFAULT_ANTHROPIC_TEXT_MODEL, this.plugin.settings.anthropicModel, async (modelId) => {
+				this.plugin.settings.anthropicModel = modelId;
+				await this.plugin.saveSettings();
+			});
+		}
+	}
+
+	private renderTtsSection(containerEl: HTMLElement): void {
+		const engine = this.plugin.settings.ttsEngine;
+		new Setting(containerEl).setName('TTS 음성').setHeading();
+		containerEl.createDiv({
+			cls: 'voice-briefing-settings-note',
+			text: '생성할 때마다 빠른 선택에서 바꿀 수 있습니다. 여기에는 기본 음성만 둡니다.'
+		});
+
+		new Setting(containerEl)
+			.setName('음성 엔진')
+			.setDesc('기본값: Gemini TTS.')
+			.addDropdown(dropdown => dropdown
+				.addOption('gemini', 'Gemini TTS')
+				.addOption('openai', 'OpenAI TTS')
+				.addOption('xai', 'Grok TTS')
+				.addOption('edge', 'Edge TTS (무료)')
+				.addOption('elevenlabs', 'ElevenLabs')
+				.setValue(engine)
+				.onChange(async (value: TtsEngine) => {
+					this.plugin.settings.ttsEngine = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}));
+
+		const shared = this.plugin.settings.aiProvider === engine;
+		if (engine === 'gemini') {
+			if (shared) {
+				containerEl.createDiv({ cls: 'voice-briefing-settings-note', text: 'Gemini 키는 위의 원고 생성 키를 그대로 사용합니다.' });
+			} else {
+				this.addProviderKey(containerEl, 'gemini');
+			}
+			this.addModelPicker(containerEl, 'Gemini TTS 모델', '음성 모델', GEMINI_TTS_MODELS, DEFAULT_GEMINI_TTS_MODEL, this.plugin.settings.geminiTtsModel, async (modelId) => {
+				this.plugin.settings.geminiTtsModel = modelId;
+				await this.plugin.saveSettings();
+			});
+			this.addGeminiVoice(containerEl);
+			this.addGeminiLanguage(containerEl);
+		} else if (engine === 'openai') {
+			if (shared) {
+				containerEl.createDiv({ cls: 'voice-briefing-settings-note', text: 'OpenAI 키는 위의 원고 생성 키를 그대로 사용합니다.' });
+			} else {
+				this.addProviderKey(containerEl, 'openai');
+			}
+			this.addModelPicker(containerEl, 'OpenAI TTS 모델', '음성 모델', OPENAI_TTS_MODELS, DEFAULT_OPENAI_TTS_MODEL, this.plugin.settings.openaiTtsModel, async (modelId) => {
+				this.plugin.settings.openaiTtsModel = modelId;
+				await this.plugin.saveSettings();
+			});
+			this.addOpenAiVoice(containerEl);
+		} else if (engine === 'xai') {
+			containerEl.createDiv({
+				cls: 'voice-briefing-settings-note',
+				text: 'Grok 음성 생성은 아직 꺼져 있습니다. 키 확인과 목소리 선택만 저장됩니다.'
+			});
+			if (!shared) this.addProviderKey(containerEl, 'xai');
+			this.addXaiVoice(containerEl);
+		} else if (engine === 'edge') {
+			new Setting(containerEl)
+				.setName('Edge 목소리')
+				.setDesc(`기본값은 출력 언어에 맞춥니다. 한국어 기본값: ko-KR-SunHiNeural.`)
+				.addDropdown(dropdown => {
+					this.addEdgeVoiceOptions(dropdown);
+					return dropdown
+						.setValue(this.plugin.settings.edgeVoice)
+						.onChange(async (value) => {
+							const check = checkVoiceId(value, false);
+							if (!check.ok) {
+								new Notice(check.message);
+								return;
+							}
+							this.plugin.settings.edgeVoice = check.value;
+							await this.plugin.saveSettings();
+						});
+				});
+			new Setting(containerEl)
+				.setName('Edge TTS 확인')
+				.setDesc('이 컴퓨터에 edge-tts 명령이 있는지 확인합니다. API 키는 없습니다.')
+				.addButton(button => button
+					.setButtonText('연결 테스트')
+					.onClick(async () => {
+						try {
+							const { execDesktop } = await import('./src/desktop/files');
+							await execDesktop('edge-tts --help');
+							new Notice('✅ Edge TTS를 찾았습니다.');
+						} catch (error: any) {
+							new Notice(`❌ Edge TTS를 찾지 못했습니다. ${redactSecrets(error?.message || '')}`);
+						}
+					}));
+		} else {
+			this.addElevenKey(containerEl);
+			this.addModelPicker(containerEl, 'ElevenLabs 모델', '권장 모델은 v4입니다.', ELEVENLABS_MODELS, DEFAULT_ELEVENLABS_MODEL, this.plugin.settings.elevenLabsModelId, async (modelId) => {
+				this.plugin.settings.elevenLabsModelId = modelId;
+				await this.plugin.saveSettings();
+			});
+			new Setting(containerEl)
+				.setName('ElevenLabs 보이스 ID')
+				.setDesc('ElevenLabs에서 복사한 보이스 ID. 비워 두면 음성을 만들 수 없습니다.')
+				.addText(text => text
+					.setPlaceholder('voice-id')
+					.setValue(this.plugin.settings.elevenLabsVoiceId)
+					.onChange(async (value) => {
+						const check = checkVoiceId(value, true);
+						if (!check.ok) {
+							new Notice(check.message);
+							return;
+						}
+						this.plugin.settings.elevenLabsVoiceId = check.value;
+						await this.plugin.saveSettings();
+					}));
+		}
+	}
+
+	private renderBriefingSection(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName('브리핑 길이·프롬프트').setHeading();
+		containerEl.createDiv({
+			cls: 'voice-briefing-settings-note',
+			text: '기본 스타일은 75–110초로 맞춥니다. 커스텀 스타일은 그 길이를 강제하지 않고 3000자까지만 자릅니다.'
+		});
+
+		new Setting(containerEl)
+			.setName('출력 언어')
+			.setDesc('대본과 Edge 기본 목소리에 함께 쓰입니다. 기본값: 한국어.')
+			.addDropdown(dropdown => dropdown
+				.addOption('ko-KR', '한국어')
+				.addOption('en-US', 'English (US)')
+				.addOption('ja-JP', '日本語')
+				.addOption('zh-CN', '中文')
+				.addOption('es-ES', 'Español')
+				.addOption('fr-FR', 'Français')
+				.addOption('de-DE', 'Deutsch')
 				.setValue(this.plugin.settings.language)
 				.onChange(async (value) => {
 					this.plugin.settings.language = value;
 					await this.plugin.saveSettings();
-					// Auto-update TTS voice based on language
 					this.autoSelectVoice(value);
 				}));
 
-		// Briefing Style
 		new Setting(containerEl)
-			.setName('Briefing Style')
-			.setDesc('Choose how the briefing should be presented')
+			.setName('브리핑 스타일')
+			.setDesc('기본값: Feynman.')
 			.addDropdown(dropdown => dropdown
-				.addOption('metaphor', '🌟 Metaphorical (Easy analogies)')
-				.addOption('feynman', '🎓 Feynman Technique (Teaching style)')
-				.addOption('anchor', '📰 News Anchor (Professional)')
-				.addOption('custom', '✏️ Custom (Define your own)')
+				.addOption('metaphor', '비유')
+				.addOption('feynman', 'Feynman')
+				.addOption('anchor', '뉴스 앵커')
+				.addOption('custom', '커스텀')
 				.setValue(this.plugin.settings.briefingStyle)
-				.onChange(async (value: any) => {
+				.onChange(async (value: 'metaphor' | 'feynman' | 'anchor' | 'custom') => {
 					this.plugin.settings.briefingStyle = value;
 					await this.plugin.saveSettings();
-					this.display(); // Refresh to show/hide custom prompt
+					this.display();
 				}));
 
-		// Custom Style Prompt (only show if custom selected)
 		if (this.plugin.settings.briefingStyle === 'custom') {
 			new Setting(containerEl)
-				.setName('Custom Style Prompt')
-				.setDesc('Define your own briefing style instruction')
+				.setName('커스텀 프롬프트')
+				.setDesc('비어 있으면 스타일만 커스텀이고, 길이는 기본 규칙을 따릅니다.')
 				.addTextArea(text => text
-					.setPlaceholder('Example: Explain concepts as if talking to a 10-year-old...')
+					.setPlaceholder('예: 초등학생에게 설명하듯 말해 주세요.')
 					.setValue(this.plugin.settings.customStylePrompt)
 					.onChange(async (value) => {
 						this.plugin.settings.customStylePrompt = value;
 						await this.plugin.saveSettings();
 					}));
 		}
+	}
 
-		// ====================
-		// AI PROVIDER SETTINGS
-		// ====================
-		containerEl.createEl('h2', { text: '🤖 AI Provider Settings' });
-
-		new Setting(containerEl)
-			.setName('AI Provider')
-			.setDesc('Select the AI service for script generation')
-			.addDropdown(dropdown => dropdown
-				.addOption('gemini', 'Google Gemini')
-				.addOption('xai', 'XAI (Grok)')
-				.addOption('openai', 'OpenAI')
-				.addOption('anthropic', 'Anthropic (Claude)')
-				.setValue(this.plugin.settings.aiProvider)
-				.onChange(async (value: any) => {
-					this.plugin.settings.aiProvider = value;
-					await this.plugin.saveSettings();
-					this.display(); // Refresh to show provider-specific settings
-				}));
-
-		// ===== All AI Provider API Keys (Always Visible) =====
-		const aiApiInfo = containerEl.createDiv('voice-briefing-info');
-		aiApiInfo.createEl('p', {
-			text: '💡 Configure all API keys here. Switch between providers anytime using the dropdown above.',
-			cls: 'setting-item-description'
-		});
-
-		// Google Gemini API Key (Always Visible)
-		new Setting(containerEl)
-			.setName('🤖 Gemini API Key')
-			.setDesc('Google Gemini API key (also used for Gemini TTS)')
-			.addText(text => {
-				text.setPlaceholder('AI...')
-					.setValue(this.plugin.settings.geminiApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.geminiApiKey = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				return text;
-			});
-
-		// XAI (Grok) API Key (Always Visible)
-		new Setting(containerEl)
-			.setName('🚀 xAI API Key')
-			.setDesc('xAI (Grok) API key (also used for xAI TTS)')
-			.addText(text => {
-				text.setPlaceholder('xai-...')
-					.setValue(this.plugin.settings.xaiApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.xaiApiKey = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				return text;
-			});
-
-		// OpenAI API Key (Always Visible)
-		new Setting(containerEl)
-			.setName('🟢 OpenAI API Key')
-			.setDesc('OpenAI API key for GPT models')
-			.addText(text => {
-				text.setPlaceholder('sk-...')
-					.setValue(this.plugin.settings.openaiApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.openaiApiKey = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				return text;
-			});
-
-		// Anthropic API Key (Always Visible)
-		new Setting(containerEl)
-			.setName('🟣 Anthropic API Key')
-			.setDesc('Anthropic API key for Claude models')
-			.addText(text => {
-				text.setPlaceholder('sk-ant-...')
-					.setValue(this.plugin.settings.anthropicApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.anthropicApiKey = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				return text;
-			});
-
-		// Model Settings (Conditional based on selected provider)
-		if (this.plugin.settings.aiProvider === 'gemini') {
-			new Setting(containerEl)
-				.setName('Gemini Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('gemini-2.0-flash')
-					.setValue(this.plugin.settings.geminiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.geminiModel = value || 'gemini-2.0-flash';
-						await this.plugin.saveSettings();
-					}));
-		}
-
-		if (this.plugin.settings.aiProvider === 'xai') {
-			new Setting(containerEl)
-				.setName('xAI Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('grok-4-1-fast')
-					.setValue(this.plugin.settings.xaiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.xaiModel = value || 'grok-4-1-fast';
-						await this.plugin.saveSettings();
-					}));
-		}
-
-		if (this.plugin.settings.aiProvider === 'openai') {
-			new Setting(containerEl)
-				.setName('OpenAI Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('gpt-4o')
-					.setValue(this.plugin.settings.openaiModel)
-					.onChange(async (value) => {
-						this.plugin.settings.openaiModel = value || 'gpt-4o';
-						await this.plugin.saveSettings();
-					}));
-		}
-
-		if (this.plugin.settings.aiProvider === 'anthropic') {
-			new Setting(containerEl)
-				.setName('Anthropic Model')
-				.setDesc('Model to use for script generation')
-				.addText(text => text
-					.setPlaceholder('claude-3-5-sonnet-20241022')
-					.setValue(this.plugin.settings.anthropicModel)
-					.onChange(async (value) => {
-						this.plugin.settings.anthropicModel = value || 'claude-3-5-sonnet-20241022';
-						await this.plugin.saveSettings();
-					}));
-		}
-
-		// ====================
-		// TTS SETTINGS
-		// ====================
-		containerEl.createEl('h2', { text: '🔊 Text-to-Speech Settings' });
+	private renderDriveSection(containerEl: HTMLElement): void {
+		const settings = this.plugin.settings;
+		new Setting(containerEl).setName('구글 드라이브').setHeading();
 
 		new Setting(containerEl)
-			.setName('Default TTS Engine')
-			.setDesc('Choose the default TTS engine (can be changed per-generation in Quick Options)')
-			.addDropdown(dropdown => dropdown
-				.addOption('gemini', '🤖 Gemini TTS (Recommended)')
-				.addOption('xai', '🚀 xAI Grok TTS (Premium)')
-				.addOption('edge', '🔷 Edge TTS (Free)')
-				.addOption('elevenlabs', '🟣 ElevenLabs (Premium)')
-				.setValue(this.plugin.settings.ttsEngine)
-				.onChange(async (value: any) => {
-					this.plugin.settings.ttsEngine = value;
-					await this.plugin.saveSettings();
-					this.display(); // Refresh to show relevant settings
-				}));
-
-		// ===== TTS API Keys Info =====
-		const ttsApiInfo = containerEl.createDiv('voice-briefing-info');
-		ttsApiInfo.createEl('p', {
-			text: '💡 Gemini TTS & xAI TTS use the same API keys from AI Provider Settings above. Configure ElevenLabs API key below.',
-			cls: 'setting-item-description'
-		});
-
-		// ElevenLabs API Key (Always Visible)
-		new Setting(containerEl)
-			.setName('🟣 ElevenLabs API Key')
-			.setDesc('Enter your ElevenLabs API key for premium TTS')
-			.addText(text => {
-				text.setPlaceholder('your-api-key')
-					.setValue(this.plugin.settings.elevenLabsApiKey)
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsApiKey = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.type = 'password';
-				return text;
-			});
-
-		// ===== Voice Settings (Conditional based on selected TTS engine) =====
-
-		// Gemini TTS Voice Settings
-		if (this.plugin.settings.ttsEngine === 'gemini') {
-			new Setting(containerEl)
-				.setName('Default Gemini Voice')
-				.setDesc('Select default voice (grouped by gender) - 30 voice options')
-				.addDropdown(dropdown => {
-					// Get voices from Gemini TTS handler
-					const femaleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'F');
-					const maleVoices = GEMINI_TTS_VOICES.filter(v => v.gender === 'M');
-
-					// Add female voices group
-					const femaleGroup = dropdown.selectEl.createEl('optgroup', { attr: { label: '👩 Female Voices' } });
-					femaleVoices.forEach(voice => {
-						const option = femaleGroup.createEl('option', {
-							text: `${voice.name} - ${voice.style}`,
-							value: voice.name
-						});
-						if (voice.name === this.plugin.settings.geminiTtsVoice) {
-							option.selected = true;
-						}
-					});
-
-					// Add male voices group
-					const maleGroup = dropdown.selectEl.createEl('optgroup', { attr: { label: '👨 Male Voices' } });
-					maleVoices.forEach(voice => {
-						const option = maleGroup.createEl('option', {
-							text: `${voice.name} - ${voice.style}`,
-							value: voice.name
-						});
-						if (voice.name === this.plugin.settings.geminiTtsVoice) {
-							option.selected = true;
-						}
-					});
-
-					return dropdown
-						.onChange(async (value) => {
-							this.plugin.settings.geminiTtsVoice = value;
-							await this.plugin.saveSettings();
-						});
-				});
-
-			new Setting(containerEl)
-				.setName('Default Gemini Language')
-				.setDesc('Select output language (Auto Detect recommended)')
-				.addDropdown(dropdown => {
-					GEMINI_TTS_LANGUAGES.forEach(lang => {
-						dropdown.addOption(lang.code, lang.label);
-					});
-					return dropdown
-						.setValue(this.plugin.settings.geminiTtsLanguage)
-						.onChange(async (value) => {
-							this.plugin.settings.geminiTtsLanguage = value;
-							await this.plugin.saveSettings();
-						});
-				});
-		}
-
-		// xAI TTS Voice Settings
-		if (this.plugin.settings.ttsEngine === 'xai') {
-			// Test xAI API Key button
-			new Setting(containerEl)
-				.setName('Test xAI Connection')
-				.setDesc('Verify your xAI API key is valid for TTS')
-				.addButton(button => button
-					.setButtonText('Test Connection')
-					.onClick(async () => {
-						if (!this.plugin.settings.xaiApiKey) {
-							new Notice('❌ Please enter your xAI API key in AI Provider Settings first');
-							return;
-						}
-						try {
-							new Notice('🔄 Testing xAI connection...');
-							const response = await requestUrl({
-								url: 'https://api.x.ai/v1/api-key',
-								method: 'GET',
-								headers: {
-									'Authorization': `Bearer ${this.plugin.settings.xaiApiKey}`
-								}
-							});
-							if (response.status === 200) {
-								new Notice('✅ xAI API key is valid!');
-							} else {
-								new Notice('❌ xAI API key is invalid');
-							}
-						} catch (error: any) {
-							if (error.status === 401) {
-								new Notice('❌ Invalid xAI API key');
-							} else {
-								new Notice('⚠️ Could not verify key. Try generating audio to test.');
-							}
-						}
-					}));
-
-			new Setting(containerEl)
-				.setName('Default xAI Voice')
-				.setDesc('Select the default voice for xAI TTS (7 premium voices)')
-				.addDropdown(dropdown => {
-					// Group voices by gender
-					const maleVoices = XAI_TTS_VOICES.filter(v => v.gender === 'M');
-					const femaleVoices = XAI_TTS_VOICES.filter(v => v.gender === 'F');
-
-					dropdown.addOption('', '── Male Voices ──');
-					maleVoices.forEach(voice => {
-						dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
-					});
-
-					dropdown.addOption('', '── Female Voices ──');
-					femaleVoices.forEach(voice => {
-						dropdown.addOption(voice.name, `${voice.name} (${voice.style})`);
-					});
-
-					return dropdown
-						.setValue(this.plugin.settings.xaiTtsVoice)
-						.onChange(async (value) => {
-							if (value) {
-								this.plugin.settings.xaiTtsVoice = value;
-								await this.plugin.saveSettings();
-							}
-						});
-				});
-		}
-
-		// Edge TTS Voice Settings
-		if (this.plugin.settings.ttsEngine === 'edge') {
-			new Setting(containerEl)
-				.setName('Default Edge Voice')
-				.setDesc('Select Edge TTS voice (Free)')
-				.addDropdown(dropdown => {
-					this.addEdgeVoiceOptions(dropdown);
-					return dropdown
-						.setValue(this.plugin.settings.edgeVoice)
-						.onChange(async (value) => {
-							this.plugin.settings.edgeVoice = value;
-							await this.plugin.saveSettings();
-						});
-				});
-		}
-
-		// ElevenLabs Voice Settings
-		if (this.plugin.settings.ttsEngine === 'elevenlabs') {
-			new Setting(containerEl)
-				.setName('ElevenLabs Voice ID')
-				.setDesc('Enter your ElevenLabs voice ID')
-				.addText(text => text
-					.setPlaceholder('voice-id')
-					.setValue(this.plugin.settings.elevenLabsVoiceId)
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsVoiceId = value;
-						await this.plugin.saveSettings();
-					}));
-
-			containerEl.createEl('h3', { text: '🎚️ Voice Characteristics' });
-
-			// Template Selector
-			new Setting(containerEl)
-				.setName('Voice Template')
-				.setDesc('Select a preset to automatically configure settings below')
-				.addDropdown(dropdown => dropdown
-					.addOption('custom', 'Custom / Manual Configuration')
-					.addOption('briefing', '📊 Briefing (Balanced)')
-					.addOption('lecture', '🎓 Lecture (Clear & Stable)')
-					.addOption('news', '📰 News (Formal & Flat)')
-					.addOption('story', '🎭 Storytelling (Expressive)')
-					.addOption('asmr', '🤫 ASMR (Soft & Detailed)')
-					.setValue('custom') // Always show as custom/select state unless tracking template persistence
-					.onChange(async (value) => {
-						if (value === 'custom') return;
-
-						switch (value) {
-							case 'briefing':
-								this.plugin.settings.elevenLabsStability = 0.50;
-								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-								this.plugin.settings.elevenLabsStyle = 0.00;
-								this.plugin.settings.elevenLabsSpeakerBoost = true;
-								break;
-							case 'lecture':
-								this.plugin.settings.elevenLabsStability = 0.75;
-								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-								this.plugin.settings.elevenLabsStyle = 0.00;
-								this.plugin.settings.elevenLabsSpeakerBoost = true;
-								break;
-							case 'news':
-								this.plugin.settings.elevenLabsStability = 0.85;
-								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-								this.plugin.settings.elevenLabsStyle = 0.00;
-								this.plugin.settings.elevenLabsSpeakerBoost = true;
-								break;
-							case 'story':
-								this.plugin.settings.elevenLabsStability = 0.40;
-								this.plugin.settings.elevenLabsSimilarityBoost = 0.75;
-								this.plugin.settings.elevenLabsStyle = 0.45;
-								this.plugin.settings.elevenLabsSpeakerBoost = true;
-								break;
-							case 'asmr':
-								this.plugin.settings.elevenLabsStability = 0.50;
-								this.plugin.settings.elevenLabsSimilarityBoost = 0.90;
-								this.plugin.settings.elevenLabsStyle = 0.00;
-								this.plugin.settings.elevenLabsSpeakerBoost = false;
-								break;
-						}
-						await this.plugin.saveSettings();
-						this.display(); // Refresh to show new slider values
-						new Notice(`Applied "${value}" template`);
-					}));
-
-			// Stability
-			new Setting(containerEl)
-				.setName('Stability')
-				.setDesc('Higher = more consistent/monotone. Lower = more emotive/random.')
-				.addSlider(slider => slider
-					.setLimits(0.0, 1.0, 0.01)
-					.setValue(this.plugin.settings.elevenLabsStability)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsStability = value;
-						await this.plugin.saveSettings();
-					}));
-
-			// Similarity Boost
-			new Setting(containerEl)
-				.setName('Clarity + Similarity Boost')
-				.setDesc('Higher = closer to original voice but potential artifacts. Lower = clearer but generic.')
-				.addSlider(slider => slider
-					.setLimits(0.0, 1.0, 0.01)
-					.setValue(this.plugin.settings.elevenLabsSimilarityBoost)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsSimilarityBoost = value;
-						await this.plugin.saveSettings();
-					}));
-
-			// Style Exaggeration
-			new Setting(containerEl)
-				.setName('Style Exaggeration')
-				.setDesc('Higher = more exaggerated style. 0 = neutral.')
-				.addSlider(slider => slider
-					.setLimits(0.0, 1.0, 0.01)
-					.setValue(this.plugin.settings.elevenLabsStyle)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsStyle = value;
-						await this.plugin.saveSettings();
-					}));
-
-			// Speaker Boost
-			new Setting(containerEl)
-				.setName('Speaker Boost')
-				.setDesc('Boosts the volume and clarity of the speaker.')
-				.addToggle(toggle => toggle
-					.setValue(this.plugin.settings.elevenLabsSpeakerBoost)
-					.onChange(async (value) => {
-						this.plugin.settings.elevenLabsSpeakerBoost = value;
-						await this.plugin.saveSettings();
-					}));
-		}
-
-		// ====================
-		// CLOUD SHARING SETTINGS
-		// ====================
-		containerEl.createEl('h2', { text: '☁️ Cloud Sharing' });
-
-		new Setting(containerEl)
-			.setName('Enable Cloud Sharing')
-			.setDesc('Upload audio files to Google Drive for sharing')
+			.setName('클라우드 공유')
+			.setDesc('켜면 음성 파일을 구글 드라이브에 올리고 노트에 링크를 넣습니다. 기본값: 꺼짐.')
 			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.cloudSharingEnabled)
+				.setValue(settings.cloudSharingEnabled)
 				.onChange(async (value) => {
 					this.plugin.settings.cloudSharingEnabled = value;
 					await this.plugin.saveSettings();
-					this.display(); // Refresh to show Google Drive settings
+					this.display();
 				}));
 
-		if (this.plugin.settings.cloudSharingEnabled) {
-			// Google Cloud Credentials Section
-			containerEl.createEl('h3', { text: '🔑 Google Cloud Credentials' });
+		if (!settings.cloudSharingEnabled) return;
 
-			const credentialsInfo = containerEl.createDiv('voice-briefing-info');
-			credentialsInfo.createEl('p', {
-				text: '📋 First, get your credentials from Google Cloud Console:',
-				cls: 'setting-item-description'
-			});
-			const steps = credentialsInfo.createEl('ol');
-			steps.createEl('li', { text: 'Go to console.cloud.google.com' });
-			steps.createEl('li', { text: 'Create a new project or select existing' });
-			steps.createEl('li', { text: 'Enable Google Drive API' });
-			steps.createEl('li', { text: 'Create OAuth 2.0 credentials (Desktop app)' });
-			steps.createEl('li', { text: 'Copy Client ID and Client Secret below' });
-			steps.createEl('li', { text: 'Add http://localhost:8585/callback to Authorized redirect URIs' });
+		const connected = settings.googleDriveConnected;
+		containerEl.createDiv({
+			cls: `voice-briefing-status-row ${connected ? 'is-connected' : 'is-disconnected'}`,
+			text: connected
+				? '연결됨. 토큰은 이 플러그인 데이터에만 저장되고 자동으로 갱신됩니다.'
+				: '연결 안 됨. 데스크톱 클라이언트 ID를 넣은 뒤 로그인하세요.'
+		});
 
-			new Setting(containerEl)
-				.setName('Client ID')
-				.setDesc('OAuth 2.0 Client ID from Google Cloud Console')
-				.addText(text => text
-					.setPlaceholder('xxxx.apps.googleusercontent.com')
-					.setValue(this.plugin.settings.googleDriveClientId)
+		new Setting(containerEl)
+			.setName('클라이언트 ID')
+			.setDesc('Google Cloud 데스크톱 앱 클라이언트. 예: ….apps.googleusercontent.com')
+			.addText(text => text
+				.setPlaceholder('….apps.googleusercontent.com')
+				.setValue(settings.googleDriveClientId)
+				.onChange(async (value) => {
+					const trimmed = value.trim();
+					if (trimmed && !/\s/.test(trimmed) && !trimmed.endsWith('.apps.googleusercontent.com')) return;
+					const check = checkClientId(value);
+					if (!check.ok) {
+						new Notice(check.message);
+						return;
+					}
+					this.plugin.settings.googleDriveClientId = check.value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('클라이언트 시크릿')
+			.setDesc('같은 데스크톱 클라이언트의 시크릿. 화면에서는 가려집니다.')
+			.addText(text => {
+				text.setPlaceholder('GOCSPX-…')
+					.setValue(settings.googleDriveClientSecret)
 					.onChange(async (value) => {
-						this.plugin.settings.googleDriveClientId = value;
-						await this.plugin.saveSettings();
-						// Refresh UI to update connection button state
-						this.display();
-					}));
-
-			new Setting(containerEl)
-				.setName('Client Secret')
-				.setDesc('OAuth 2.0 Client Secret from Google Cloud Console')
-				.addText(text => {
-					text.setPlaceholder('GOCSPX-...')
-						.setValue(this.plugin.settings.googleDriveClientSecret)
-						.onChange(async (value) => {
-							this.plugin.settings.googleDriveClientSecret = value;
-							await this.plugin.saveSettings();
-							// Refresh UI to update connection button state
-							this.display();
-						});
-					text.inputEl.type = 'password';
-					return text;
-				});
-
-			// Connection Section
-			containerEl.createEl('h3', { text: '🔗 Connection Status' });
-
-			const hasCredentials = this.plugin.settings.googleDriveClientId && this.plugin.settings.googleDriveClientSecret;
-
-			const connectionSetting = new Setting(containerEl)
-				.setName('Google Drive Connection')
-				.setDesc(this.plugin.settings.googleDriveConnected
-					? '✅ Connected (token auto-refreshes)'
-					: hasCredentials
-						? '🔴 Not connected - Click to connect'
-						: '⚠️ Enter Client ID and Secret above first');
-
-			if (!this.plugin.settings.googleDriveConnected) {
-				connectionSetting.addButton(button => button
-					.setButtonText('Connect with Google')
-					.setCta()
-					.setDisabled(!hasCredentials)
-					.onClick(async () => {
-						if (!hasCredentials) {
-							new Notice('⚠️ Please enter Client ID and Client Secret first');
+						const check = checkApiKey(value);
+						if (!check.ok) {
+							new Notice(check.message);
 							return;
 						}
-
-						try {
-							new Notice('🔄 Starting Google OAuth flow...');
-
-							const { GoogleOAuthFlow } = await import('./src/cloud/google-oauth-flow');
-							const oauthFlow = new GoogleOAuthFlow({
-								clientId: this.plugin.settings.googleDriveClientId,
-								clientSecret: this.plugin.settings.googleDriveClientSecret,
-								redirectPort: 8585
-							});
-
-							const tokens = await oauthFlow.startOAuthFlow();
-
-							// Save tokens
-							this.plugin.settings.googleDriveToken = tokens.accessToken;
-							this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
-							this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
-							this.plugin.settings.googleDriveConnected = true;
-							await this.plugin.saveSettings();
-
-							new Notice('✅ Google Drive connected successfully!');
-							this.display(); // Refresh UI
-						} catch (error: any) {
-							console.error('OAuth error:', error);
-							new Notice(`❌ Connection failed: ${error.message}`);
-						}
-					}));
-			} else {
-				// Show token expiry info
-				const expiresAt = this.plugin.settings.googleDriveTokenExpiresAt;
-				if (expiresAt) {
-					const expiryDate = new Date(expiresAt);
-					const now = new Date();
-					const isExpired = now.getTime() >= expiresAt;
-
-					connectionSetting.setDesc(
-						isExpired
-							? '⚠️ Token expired - will auto-refresh on next use'
-							: `✅ Connected (expires: ${expiryDate.toLocaleString()})`
-					);
-				}
-
-				connectionSetting
-					.addButton(button => button
-						.setButtonText('Test Connection')
-						.onClick(async () => {
-							new Notice('🔄 Testing Google Drive connection...');
-							try {
-								const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
-								const client = new GoogleDriveClient({
-									accessToken: this.plugin.settings.googleDriveToken,
-									refreshToken: this.plugin.settings.googleDriveRefreshToken,
-									tokenExpiresAt: this.plugin.settings.googleDriveTokenExpiresAt,
-									clientId: this.plugin.settings.googleDriveClientId,
-									clientSecret: this.plugin.settings.googleDriveClientSecret,
-									onTokenRefresh: async (tokens) => {
-										this.plugin.settings.googleDriveToken = tokens.accessToken;
-										this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
-										await this.plugin.saveSettings();
-										this.display();
-									}
-								});
-								const isConnected = await client.testConnection();
-								if (isConnected) {
-									const userInfo = await client.getUserInfo();
-									new Notice(`✅ Connected as ${userInfo?.email || 'Unknown user'}`);
-								} else {
-									new Notice('❌ Connection test failed');
-								}
-							} catch (error: any) {
-								new Notice(`❌ Connection test failed: ${error.message}`);
-							}
-						}))
-					.addButton(button => button
-						.setButtonText('Disconnect')
-						.setWarning()
-						.onClick(async () => {
-							this.plugin.settings.googleDriveConnected = false;
-							this.plugin.settings.googleDriveToken = '';
-							this.plugin.settings.googleDriveRefreshToken = '';
-							this.plugin.settings.googleDriveTokenExpiresAt = 0;
-							this.plugin.settings.googleDriveFolderId = '';
-							await this.plugin.saveSettings();
-							this.display();
-							new Notice('🔴 Disconnected from Google Drive');
-						}));
-			}
-
-			// Link Format Setting
-			new Setting(containerEl)
-				.setName('Link Format')
-				.setDesc('Choose how the audio link should be embedded in your note')
-				.addDropdown(dropdown => dropdown
-					.addOption('html', 'HTML Audio Player (Recommended)')
-					.addOption('markdown', 'Markdown Link')
-					.addOption('direct', 'Direct URL')
-					.setValue(this.plugin.settings.linkFormat)
-					.onChange(async (value: any) => {
-						this.plugin.settings.linkFormat = value;
+						this.plugin.settings.googleDriveClientSecret = check.value;
 						await this.plugin.saveSettings();
-					}));
-
-			// Folder ID Setting
-			new Setting(containerEl)
-				.setName('Google Drive Folder ID (Optional)')
-				.setDesc('Leave empty to upload to root, or paste folder ID from Drive URL')
-				.addText(text => text
-					.setPlaceholder('1a2b3c4d5e6f...')
-					.setValue(this.plugin.settings.googleDriveFolderId || '')
-					.onChange(async (value) => {
-						this.plugin.settings.googleDriveFolderId = value;
-						await this.plugin.saveSettings();
-					}));
-
-			// Info box
-			const infoDiv = containerEl.createDiv('voice-briefing-info');
-			infoDiv.createEl('p', {
-				text: '💡 Tip: To find your folder ID, open the folder in Google Drive and copy the ID from the URL (the part after /folders/)',
-				cls: 'setting-item-description'
+					});
+				text.inputEl.type = 'password';
+				return text;
 			});
 
-			// Token info for debugging (collapsible)
-			if (this.plugin.settings.googleDriveConnected && this.plugin.settings.googleDriveRefreshToken) {
-				const debugDiv = containerEl.createDiv('voice-briefing-debug');
-				const details = debugDiv.createEl('details');
-				details.createEl('summary', { text: '🔧 Advanced: Token Info' });
-				const pre = details.createEl('pre');
-				pre.style.fontSize = '11px';
-				pre.style.background = '#f5f5f5';
-				pre.style.padding = '8px';
-				pre.style.borderRadius = '4px';
-				pre.style.overflow = 'auto';
-				pre.setText(`Access Token: ${this.plugin.settings.googleDriveToken.substring(0, 20)}...
-Refresh Token: ${this.plugin.settings.googleDriveRefreshToken ? '✅ Saved' : '❌ Missing'}
-Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plugin.settings.googleDriveTokenExpiresAt).toLocaleString() : 'Unknown'}`);
-			}
+		const actions = new Setting(containerEl)
+			.setName(connected ? '로그아웃' : '로그인')
+			.setDesc('브라우저에서 Google 계정으로 연결합니다. 테스트 모드 앱의 갱신 토큰은 7일 뒤 만료됩니다.');
+		if (!connected) {
+			actions.addButton(button => button
+				.setButtonText('로그인')
+				.setCta()
+				.onClick(() => this.loginDrive()));
+		} else {
+			actions
+				.addButton(button => button
+					.setButtonText('연결 테스트')
+					.onClick(() => this.testDrive()))
+				.addButton(button => button
+					.setButtonText('로그아웃')
+					.setWarning()
+					.onClick(() => this.logoutDrive()));
+		}
+
+		new Setting(containerEl)
+			.setName('링크 형식')
+			.setDesc('노트에 넣는 형식. 기본값: HTML 오디오 플레이어.')
+			.addDropdown(dropdown => dropdown
+				.addOption('html', 'HTML 오디오 플레이어')
+				.addOption('markdown', '마크다운 링크')
+				.addOption('direct', '주소만')
+				.setValue(settings.linkFormat)
+				.onChange(async (value: 'html' | 'direct' | 'markdown') => {
+					this.plugin.settings.linkFormat = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('드라이브 폴더 ID')
+			.setDesc('비우면 내 드라이브 루트에 올립니다. 폴더 주소를 붙여 넣으면 ID만 저장합니다.')
+			.addText(text => text
+				.setPlaceholder('폴더 ID 또는 폴더 주소')
+				.setValue(settings.googleDriveFolderId || '')
+				.onChange(async (value) => {
+					const trimmed = value.trim();
+					if (trimmed && !trimmed.includes('/') && trimmed.length < 10 && !/\s/.test(trimmed)) return;
+					const check = checkFolderId(value);
+					if (!check.ok) {
+						new Notice(check.message);
+						return;
+					}
+					this.plugin.settings.googleDriveFolderId = check.value;
+					await this.plugin.saveSettings();
+					if (check.message) new Notice(check.message);
+				}));
+	}
+
+	private renderAdvancedSection(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName('고급').setHeading();
+		if (this.plugin.settings.ttsEngine !== 'elevenlabs') {
+			containerEl.createDiv({
+				cls: 'voice-briefing-settings-note',
+				text: 'ElevenLabs를 고르면 안정성, 유사도, 스타일 조절이 여기에 나타납니다.'
+			});
+			return;
+		}
+
+		new Setting(containerEl)
+			.setName('목소리 프리셋')
+			.setDesc('고르면 아래 슬라이더를 바꿉니다. 기본 브리핑 값은 안정성 0.5, 유사도 0.75, 스타일 0입니다.')
+			.addDropdown(dropdown => dropdown
+				.addOption('custom', '직접 조절')
+				.addOption('briefing', '브리핑')
+				.addOption('lecture', '강의')
+				.addOption('news', '뉴스')
+				.addOption('story', '이야기')
+				.addOption('asmr', 'ASMR')
+				.setValue('custom')
+				.onChange(async (value) => {
+					if (value === 'custom') return;
+					const preset = this.elevenPreset(value);
+					this.plugin.settings.elevenLabsStability = preset.stability;
+					this.plugin.settings.elevenLabsSimilarityBoost = preset.similarity;
+					this.plugin.settings.elevenLabsStyle = preset.style;
+					this.plugin.settings.elevenLabsSpeakerBoost = preset.boost;
+					await this.plugin.saveSettings();
+					this.display();
+					new Notice(`「${value}」 프리셋을 적용했습니다.`);
+				}));
+
+		this.addUnitSlider(containerEl, '안정성', '높을수록 일정하고, 낮을수록 변화가 큽니다. 기본값: 0.5.', this.plugin.settings.elevenLabsStability, 0.5, async (value) => {
+			this.plugin.settings.elevenLabsStability = value;
+			await this.plugin.saveSettings();
+		});
+		this.addUnitSlider(containerEl, '유사도', '높을수록 원본 목소리에 가깝습니다. 기본값: 0.75.', this.plugin.settings.elevenLabsSimilarityBoost, 0.75, async (value) => {
+			this.plugin.settings.elevenLabsSimilarityBoost = value;
+			await this.plugin.saveSettings();
+		});
+		this.addUnitSlider(containerEl, '스타일', '0은 중립입니다. v2 모델에서만 전달됩니다. 기본값: 0.', this.plugin.settings.elevenLabsStyle, 0, async (value) => {
+			this.plugin.settings.elevenLabsStyle = value;
+			await this.plugin.saveSettings();
+		});
+		new Setting(containerEl)
+			.setName('화자 부스트')
+			.setDesc('명료도를 올립니다. v2 모델에서만 전달됩니다. 기본값: 켜짐.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.elevenLabsSpeakerBoost)
+				.onChange(async (value) => {
+					this.plugin.settings.elevenLabsSpeakerBoost = value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	private addProviderKey(containerEl: HTMLElement, provider: AiProvider): void {
+		const meta = {
+			gemini: { name: 'Gemini API 키', placeholder: 'AIza…', field: 'geminiApiKey' as const, label: 'Gemini' },
+			xai: { name: 'Grok API 키', placeholder: 'xai-…', field: 'xaiApiKey' as const, label: 'Grok' },
+			openai: { name: 'OpenAI API 키', placeholder: 'sk-…', field: 'openaiApiKey' as const, label: 'OpenAI' },
+			anthropic: { name: 'Claude API 키', placeholder: 'sk-ant-…', field: 'anthropicApiKey' as const, label: 'Claude' }
+		}[provider];
+		this.addSecretField(containerEl, meta.name, '입력값은 가려집니다. 연결 테스트는 키로 목록 조회만 합니다.', this.plugin.settings[meta.field], meta.placeholder, async (value) => {
+			this.plugin.settings[meta.field] = value;
+			await this.plugin.saveSettings();
+		}, () => this.testProviderKey(provider, this.plugin.settings[meta.field], meta.label));
+	}
+
+	private addElevenKey(containerEl: HTMLElement): void {
+		this.addSecretField(containerEl, 'ElevenLabs API 키', '입력값은 가려집니다. 연결 테스트는 계정 조회만 합니다.', this.plugin.settings.elevenLabsApiKey, 'xi-…', async (value) => {
+			this.plugin.settings.elevenLabsApiKey = value;
+			await this.plugin.saveSettings();
+		}, () => this.testProviderKey('elevenlabs', this.plugin.settings.elevenLabsApiKey, 'ElevenLabs'));
+	}
+
+	private addSecretField(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		value: string,
+		placeholder: string,
+		save: (value: string) => Promise<void>,
+		test: () => Promise<void>
+	): void {
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addText(text => {
+				text.setPlaceholder(placeholder)
+					.setValue(value)
+					.onChange(async (raw) => {
+						const trimmed = raw.trim();
+						if (trimmed && trimmed.length < 8 && !/\s/.test(trimmed)) return;
+						const check = checkApiKey(raw);
+						if (!check.ok) {
+							new Notice(check.message);
+							return;
+						}
+						await save(check.value);
+					});
+				text.inputEl.type = 'password';
+				return text;
+			})
+			.addButton(button => button
+				.setButtonText('연결 테스트')
+				.onClick(() => test()));
+	}
+
+	private async testProviderKey(provider: AiProvider | 'elevenlabs', apiKey: string, label: string): Promise<void> {
+		let spec;
+		try {
+			spec = buildKeyProbe(provider, apiKey);
+		} catch (error: any) {
+			new Notice(error?.message || 'API 키를 입력한 뒤 연결 테스트를 누르세요.');
+			return;
+		}
+		try {
+			const response = await requestUrl({
+				url: spec.url,
+				method: 'GET',
+				headers: spec.headers,
+				throw: false
+			});
+			const result = probeNotice(response.status, label);
+			new Notice(`${result.ok ? '✅' : '❌'} ${result.message}`);
+		} catch (error: any) {
+			new Notice(`❌ ${label} 연결에 실패했습니다. ${redactSecrets(error?.message || '네트워크를 확인하세요.')}`);
 		}
 	}
+
+	private addGeminiVoice(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Gemini 목소리')
+			.setDesc('기본값: Kore.')
+			.addDropdown(dropdown => {
+				const female = dropdown.selectEl.createEl('optgroup', { attr: { label: '여성' } });
+				const male = dropdown.selectEl.createEl('optgroup', { attr: { label: '남성' } });
+				GEMINI_TTS_VOICES.forEach(voice => {
+					const group = voice.gender === 'F' ? female : male;
+					const option = group.createEl('option', { text: `${voice.name} (${voice.style})`, value: voice.name });
+					if (voice.name === this.plugin.settings.geminiTtsVoice) option.selected = true;
+				});
+				return dropdown.onChange(async (value) => {
+					this.plugin.settings.geminiTtsVoice = value;
+					await this.plugin.saveSettings();
+				});
+			});
+	}
+
+	private addGeminiLanguage(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Gemini 음성 언어')
+			.setDesc('기본값: 자동.')
+			.addDropdown(dropdown => {
+				GEMINI_TTS_LANGUAGES.forEach(lang => dropdown.addOption(lang.code, lang.label));
+				return dropdown
+					.setValue(this.plugin.settings.geminiTtsLanguage)
+					.onChange(async (value) => {
+						this.plugin.settings.geminiTtsLanguage = value;
+						await this.plugin.saveSettings();
+					});
+			});
+	}
+
+	private addOpenAiVoice(containerEl: HTMLElement): void {
+		const known = OPENAI_TTS_VOICES.some((voice) => voice.id === this.plugin.settings.openaiTtsVoice);
+		new Setting(containerEl)
+			.setName('OpenAI 목소리')
+			.setDesc(`목록의 목소리. 기본값: ${DEFAULT_OPENAI_TTS_VOICE}.`)
+			.addDropdown(dropdown => {
+				OPENAI_TTS_VOICES.forEach((voice) => dropdown.addOption(voice.id, voice.label));
+				return dropdown
+					.setValue(known ? this.plugin.settings.openaiTtsVoice : DEFAULT_OPENAI_TTS_VOICE)
+					.onChange(async (value) => {
+						this.plugin.settings.openaiTtsVoice = value;
+						await this.plugin.saveSettings();
+						this.display();
+					});
+			});
+		new Setting(containerEl)
+			.setName('OpenAI 목소리 ID')
+			.setDesc('목록에 없는 ID를 적을 때 사용합니다. 비우면 위 목록을 사용합니다.')
+			.addText(text => text
+				.setPlaceholder(DEFAULT_OPENAI_TTS_VOICE)
+				.setValue(known ? '' : this.plugin.settings.openaiTtsVoice)
+				.onChange(async (value) => {
+					const check = checkVoiceId(value, true);
+					if (!check.ok) {
+						new Notice(check.message);
+						return;
+					}
+					if (!check.value) {
+						this.plugin.settings.openaiTtsVoice = DEFAULT_OPENAI_TTS_VOICE;
+						await this.plugin.saveSettings();
+						return;
+					}
+					this.plugin.settings.openaiTtsVoice = check.value;
+					await this.plugin.saveSettings();
+				}));
+	}
+
+	private addXaiVoice(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName('Grok 목소리')
+			.setDesc('기본값: Sal.')
+			.addDropdown(dropdown => {
+				const male = dropdown.selectEl.createEl('optgroup', { attr: { label: '남성' } });
+				const female = dropdown.selectEl.createEl('optgroup', { attr: { label: '여성' } });
+				XAI_TTS_VOICES.forEach(voice => {
+					const group = voice.gender === 'F' ? female : male;
+					const option = group.createEl('option', { text: `${voice.name} (${voice.style})`, value: voice.name });
+					if (voice.name === this.plugin.settings.xaiTtsVoice) option.selected = true;
+				});
+				return dropdown.onChange(async (value) => {
+					if (!value) return;
+					this.plugin.settings.xaiTtsVoice = value;
+					await this.plugin.saveSettings();
+				});
+			});
+	}
+
+	private addUnitSlider(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		value: number,
+		fallback: number,
+		save: (value: number) => Promise<void>
+	): void {
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addSlider(slider => slider
+				.setLimits(0, 1, 0.01)
+				.setValue(clampUnitInterval(value, fallback))
+				.setDynamicTooltip()
+				.onChange(async (next) => {
+					await save(clampUnitInterval(next, fallback));
+				}));
+	}
+
+	private elevenPreset(value: string): { stability: number; similarity: number; style: number; boost: boolean } {
+		if (value === 'lecture') return { stability: 0.75, similarity: 0.75, style: 0, boost: true };
+		if (value === 'news') return { stability: 0.85, similarity: 0.75, style: 0, boost: true };
+		if (value === 'story') return { stability: 0.4, similarity: 0.75, style: 0.45, boost: true };
+		if (value === 'asmr') return { stability: 0.5, similarity: 0.9, style: 0, boost: false };
+		return { stability: 0.5, similarity: 0.75, style: 0, boost: true };
+	}
+
+	private async loginDrive(): Promise<void> {
+		if (!this.plugin.settings.googleDriveClientId || !this.plugin.settings.googleDriveClientSecret) {
+			new Notice('클라이언트 ID와 시크릿을 먼저 입력하세요.');
+			return;
+		}
+		try {
+			new Notice('Google 로그인 창을 엽니다.');
+			const { GoogleOAuthFlow } = await import('./src/cloud/google-oauth-flow');
+			const oauthFlow = new GoogleOAuthFlow({
+				clientId: this.plugin.settings.googleDriveClientId,
+				clientSecret: this.plugin.settings.googleDriveClientSecret,
+				redirectPort: 8585
+			});
+			const tokens = await oauthFlow.startOAuthFlow();
+			this.plugin.settings.googleDriveToken = tokens.accessToken;
+			this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
+			this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+			this.plugin.settings.googleDriveConnected = true;
+			await this.plugin.saveSettings();
+			new Notice('✅ 구글 드라이브에 로그인했습니다.');
+			this.display();
+		} catch (error: any) {
+			new Notice(`❌ 로그인에 실패했습니다. ${redactSecrets(error?.message || '')}`);
+		}
+	}
+
+	private async logoutDrive(): Promise<void> {
+		this.plugin.settings.googleDriveConnected = false;
+		this.plugin.settings.googleDriveToken = '';
+		this.plugin.settings.googleDriveRefreshToken = '';
+		this.plugin.settings.googleDriveTokenExpiresAt = 0;
+		await this.plugin.saveSettings();
+		this.display();
+		new Notice('구글 드라이브에서 로그아웃했습니다. 폴더 ID는 그대로 둡니다.');
+	}
+
+	private async testDrive(): Promise<void> {
+		try {
+			const { GoogleDriveClient } = await import('./src/cloud/google-drive-client');
+			const client = new GoogleDriveClient({
+				accessToken: this.plugin.settings.googleDriveToken,
+				refreshToken: this.plugin.settings.googleDriveRefreshToken,
+				tokenExpiresAt: this.plugin.settings.googleDriveTokenExpiresAt,
+				clientId: this.plugin.settings.googleDriveClientId,
+				clientSecret: this.plugin.settings.googleDriveClientSecret,
+				onTokenRefresh: async (tokens) => {
+					this.plugin.settings.googleDriveToken = tokens.accessToken;
+					this.plugin.settings.googleDriveTokenExpiresAt = tokens.expiresAt;
+					if (tokens.refreshToken) this.plugin.settings.googleDriveRefreshToken = tokens.refreshToken;
+					await this.plugin.saveSettings();
+				}
+			});
+			const isConnected = await client.testConnection();
+			if (!isConnected) {
+				new Notice('❌ 구글 드라이브 연결에 실패했습니다.');
+				return;
+			}
+			const userInfo = await client.getUserInfo();
+			new Notice(`✅ ${userInfo?.email || '계정'}으로 연결되어 있습니다.`);
+		} catch (error: any) {
+			new Notice(`❌ 구글 드라이브 연결에 실패했습니다. ${redactSecrets(error?.message || '')}`);
+		}
+	}
+
 
 	// Get current provider's API key
 	getCurrentApiKey(): string {
@@ -1734,7 +1730,7 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
 			case 'anthropic':
 				return this.plugin.settings.anthropicModel;
 			default:
-				return 'gemini-2.0-flash';
+				return DEFAULT_GEMINI_TEXT_MODEL;
 		}
 	}
 
@@ -1757,6 +1753,61 @@ Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plu
 			this.plugin.settings.edgeVoice = voiceMap[language] || voiceMap['en-US'];
 			this.plugin.saveSettings();
 		}
+	}
+
+	private addModelPicker(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		models: ModelOption[],
+		defaultId: string,
+		current: string,
+		apply: (modelId: string) => Promise<void>
+	): void {
+		const known = models.some((model) => model.id === current);
+		let selected = known ? current : (models[0]?.id || defaultId);
+		let custom = known ? '' : current;
+
+		const save = async (next: string) => {
+			const check = checkModelId(next, false);
+			if (!check.ok) {
+				new Notice(check.message);
+				return;
+			}
+			await apply(check.value);
+		};
+
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(`${desc} 기본값: ${defaultId}.`)
+			.addDropdown((dropdown) => {
+				models.forEach((model) => dropdown.addOption(model.id, model.label));
+				if (!known && current) dropdown.addOption(current, `${current} (저장됨)`);
+				return dropdown
+					.setValue(known ? selected : (current || selected))
+					.onChange(async (value) => {
+						selected = value;
+						custom = '';
+						await save(selected);
+						this.display();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName(`${name} 직접 입력`)
+			.setDesc('비우면 위 목록을 사용합니다. 적은 ID는 목록보다 우선합니다.')
+			.addText((text) => text
+				.setPlaceholder(defaultId)
+				.setValue(custom)
+				.onChange(async (value) => {
+					const check = checkModelId(value, true);
+					if (!check.ok) {
+						new Notice(check.message);
+						return;
+					}
+					custom = check.value;
+					await save(custom || selected);
+				}));
 	}
 
 	addEdgeVoiceOptions(dropdown: any): void {
