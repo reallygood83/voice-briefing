@@ -1,384 +1,238 @@
-import { Notice, requestUrl } from 'obsidian';
 import * as http from 'http';
 import * as url from 'url';
+import { redactSecrets } from '../ai/extract-text';
+import {
+	GOOGLE_DRIVE_SCOPES,
+	GOOGLE_TOKEN_URL,
+	type OAuthTokens,
+	buildAuthorizationUrl,
+	escapeHtml,
+	generateCodeChallengeWeb,
+	generateCodeVerifier,
+	isTokenExpired,
+	parseTokenResponse
+} from './oauth-protocol';
 
 export interface OAuthConfig {
 	clientId: string;
 	clientSecret: string;
 	redirectPort: number;
+	timeoutMs?: number;
 }
 
-export interface OAuthTokens {
-	accessToken: string;
-	refreshToken: string;
-	expiresIn: number;
-	expiresAt: number;
+export interface TokenRequestResult {
+	status: number;
+	data: any;
+}
+
+export interface OAuthDependencies {
+	requestToken: (body: URLSearchParams) => Promise<TokenRequestResult>;
+	openExternal: (target: string) => void;
+	now: () => number;
+	log: (message: string) => void;
+	onReady?: (info: { port: number; authUrl: string }) => void;
+}
+
+export type { OAuthTokens };
+
+const DEFAULT_TIMEOUT_MS = 120000;
+
+async function defaultRequestToken(body: URLSearchParams): Promise<TokenRequestResult> {
+	const { requestUrl } = await import('obsidian');
+	const response = await requestUrl({
+		url: GOOGLE_TOKEN_URL,
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: body.toString(),
+		throw: false
+	});
+	return { status: response.status, data: response.json };
+}
+
+function defaultOpenExternal(target: string): void {
+	const { shell } = require('electron');
+	shell.openExternal(target);
 }
 
 export class GoogleOAuthFlow {
-	private readonly AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-	private readonly TOKEN_URL = 'https://oauth2.googleapis.com/token';
-	private readonly SCOPES = [
-		'https://www.googleapis.com/auth/drive.file',
-		'https://www.googleapis.com/auth/userinfo.email'
-	];
-
-	private config: OAuthConfig;
 	private server: http.Server | null = null;
+	private readonly deps: OAuthDependencies;
 
-	constructor(config: OAuthConfig) {
-		this.config = config;
-	}
-
-	/**
-	 * Start the OAuth flow - opens browser and waits for callback
-	 */
-	async startOAuthFlow(): Promise<OAuthTokens> {
-		return new Promise(async (resolve, reject) => {
-			try {
-				// Generate PKCE code verifier and challenge for security
-				const codeVerifier = this.generateCodeVerifier();
-				const codeChallenge = await this.generateCodeChallenge(codeVerifier);
-
-				// Start local server to receive callback
-				const redirectUri = `http://localhost:${this.config.redirectPort}/callback`;
-
-				this.server = http.createServer(async (req, res) => {
-					try {
-						const parsedUrl = url.parse(req.url || '', true);
-
-						if (parsedUrl.pathname === '/callback') {
-							const code = parsedUrl.query.code as string;
-							const error = parsedUrl.query.error as string;
-
-							if (error) {
-								res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-								res.end(this.getErrorHtml(error));
-								this.cleanup();
-								reject(new Error(`OAuth error: ${error}`));
-								return;
-							}
-
-							if (code) {
-								try {
-									// Exchange code for tokens
-									const tokens = await this.exchangeCodeForTokens(code, codeVerifier, redirectUri);
-
-									res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-									res.end(this.getSuccessHtml());
-									this.cleanup();
-									resolve(tokens);
-								} catch (tokenError: any) {
-									res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-									res.end(this.getErrorHtml(tokenError.message));
-									this.cleanup();
-									reject(tokenError);
-								}
-							}
-						}
-					} catch (err) {
-						reject(err);
-					}
-				});
-
-				this.server.listen(this.config.redirectPort, () => {
-					console.log(`OAuth callback server listening on port ${this.config.redirectPort}`);
-				});
-
-				// Handle server errors
-				this.server.on('error', (err: any) => {
-					if (err.code === 'EADDRINUSE') {
-						reject(new Error(`Port ${this.config.redirectPort} is already in use. Please close other applications using this port.`));
-					} else {
-						reject(err);
-					}
-				});
-
-				// Build authorization URL
-				const authUrl = this.buildAuthUrl(redirectUri, codeChallenge);
-
-				// Open browser
-				new Notice('🌐 Opening browser for Google login...', 3000);
-				const { shell } = require('electron');
-				shell.openExternal(authUrl);
-
-				// Set timeout (2 minutes)
-				setTimeout(() => {
-					if (this.server) {
-						this.cleanup();
-						reject(new Error('OAuth flow timed out. Please try again.'));
-					}
-				}, 120000);
-
-			} catch (error) {
-				this.cleanup();
-				reject(error);
-			}
-		});
-	}
-
-	/**
-	 * Refresh access token using refresh token
-	 */
-	async refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
-		try {
-			const response = await requestUrl({
-				url: this.TOKEN_URL,
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/x-www-form-urlencoded'
-				},
-				body: new URLSearchParams({
-					client_id: this.config.clientId,
-					client_secret: this.config.clientSecret,
-					refresh_token: refreshToken,
-					grant_type: 'refresh_token'
-				}).toString()
-			});
-
-			if (response.status !== 200) {
-				throw new Error(`Token refresh failed: ${response.status}`);
-			}
-
-			const data = response.json;
-			const expiresAt = Date.now() + (data.expires_in * 1000);
-
-			return {
-				accessToken: data.access_token,
-				refreshToken: refreshToken, // Refresh token doesn't change
-				expiresIn: data.expires_in,
-				expiresAt: expiresAt
-			};
-		} catch (error: any) {
-			console.error('Token refresh error:', error);
-			throw new Error(`Failed to refresh token: ${error.message}`);
-		}
-	}
-
-	/**
-	 * Check if token is expired or about to expire (within 5 minutes)
-	 */
-	isTokenExpired(expiresAt: number): boolean {
-		const bufferTime = 5 * 60 * 1000; // 5 minutes buffer
-		return Date.now() >= (expiresAt - bufferTime);
-	}
-
-	/**
-	 * Exchange authorization code for tokens
-	 */
-	private async exchangeCodeForTokens(
-		code: string,
-		codeVerifier: string,
-		redirectUri: string
-	): Promise<OAuthTokens> {
-		const response = await requestUrl({
-			url: this.TOKEN_URL,
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded'
-			},
-			body: new URLSearchParams({
-				code: code,
-				client_id: this.config.clientId,
-				client_secret: this.config.clientSecret,
-				redirect_uri: redirectUri,
-				grant_type: 'authorization_code',
-				code_verifier: codeVerifier
-			}).toString()
-		});
-
-		if (response.status !== 200) {
-			throw new Error(`Token exchange failed: ${response.status}`);
-		}
-
-		const data = response.json;
-		const expiresAt = Date.now() + (data.expires_in * 1000);
-
-		return {
-			accessToken: data.access_token,
-			refreshToken: data.refresh_token,
-			expiresIn: data.expires_in,
-			expiresAt: expiresAt
+	constructor(private config: OAuthConfig, deps: Partial<OAuthDependencies> = {}) {
+		this.deps = {
+			requestToken: deps.requestToken || defaultRequestToken,
+			openExternal: deps.openExternal || defaultOpenExternal,
+			now: deps.now || Date.now,
+			log: deps.log || (() => undefined),
+			onReady: deps.onReady
 		};
 	}
 
 	/**
-	 * Build OAuth authorization URL
+	 * Desktop loopback OAuth: listen on 127.0.0.1, open the browser, exchange the code with PKCE.
+	 * https://developers.google.com/identity/protocols/oauth2/native-app
 	 */
-	private buildAuthUrl(redirectUri: string, codeChallenge: string): string {
-		const params = new URLSearchParams({
+	startOAuthFlow(): Promise<OAuthTokens> {
+		const codeVerifier = generateCodeVerifier();
+		let redirectUri = '';
+		let settled = false;
+		let timer: NodeJS.Timeout;
+
+		return new Promise((resolve, reject) => {
+			const finish = (action: () => void) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				this.cleanup();
+				action();
+			};
+
+			this.server = http.createServer((req, res) => {
+				const parsedUrl = url.parse(req.url || '', true);
+				if (parsedUrl.pathname !== '/callback') {
+					res.writeHead(404, { 'Content-Type': 'text/plain' });
+					res.end('Not found');
+					return;
+				}
+
+				const error = firstQuery(parsedUrl.query.error);
+				const code = firstQuery(parsedUrl.query.code);
+
+				if (error) {
+					const safeError = redactSecrets(error);
+					res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+					res.end(this.getErrorHtml(escapeHtml(safeError)));
+					finish(() => reject(new Error(`OAuth error: ${safeError}`)));
+					return;
+				}
+
+				if (!code) {
+					res.writeHead(400, { 'Content-Type': 'text/plain' });
+					res.end('Missing authorization code');
+					return;
+				}
+
+				this.exchangeCodeForTokens(code, codeVerifier, redirectUri)
+					.then((tokens) => {
+						res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+						res.end(this.getSuccessHtml());
+						finish(() => resolve(tokens));
+					})
+					.catch((tokenError: any) => {
+						const message = redactSecrets(tokenError?.message || 'Token exchange failed');
+						res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+						res.end(this.getErrorHtml(escapeHtml(message)));
+						finish(() => reject(new Error(message)));
+					});
+			});
+
+			this.server.on('error', (err: NodeJS.ErrnoException) => {
+				const message = err.code === 'EADDRINUSE'
+					? `Port ${this.config.redirectPort} is already in use. Close the other app using that port and try again.`
+					: redactSecrets(err.message || 'OAuth callback server failed');
+				finish(() => reject(new Error(message)));
+			});
+
+			this.server.listen(this.config.redirectPort, '127.0.0.1', () => {
+				void (async () => {
+					try {
+						const address = this.server?.address();
+						const port = typeof address === 'object' && address ? address.port : this.config.redirectPort;
+						redirectUri = `http://127.0.0.1:${port}/callback`;
+						const codeChallenge = await generateCodeChallengeWeb(codeVerifier);
+						const authUrl = buildAuthorizationUrl({
+							clientId: this.config.clientId,
+							redirectUri,
+							codeChallenge,
+							scopes: GOOGLE_DRIVE_SCOPES
+						});
+						this.deps.log(`OAuth callback listening on 127.0.0.1:${port}`);
+						this.deps.onReady?.({ port, authUrl });
+						this.deps.openExternal(authUrl);
+					} catch (openError: any) {
+						finish(() => reject(new Error(redactSecrets(openError?.message || 'Could not open the browser'))));
+					}
+				})();
+			});
+
+			timer = setTimeout(() => {
+				finish(() => reject(new Error('OAuth flow timed out. Please try again.')));
+			}, this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+		});
+	}
+
+	async refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
+		const body = new URLSearchParams({
+			client_id: this.config.clientId,
+			refresh_token: refreshToken,
+			grant_type: 'refresh_token'
+		});
+		if (this.config.clientSecret) {
+			body.set('client_secret', this.config.clientSecret);
+		}
+
+		const response = await this.deps.requestToken(body);
+		if (response.status !== 200) {
+			throw new Error(`Token refresh failed (${response.status}). Reconnect Google Drive.`);
+		}
+
+		const tokens = parseTokenResponse(response.data, this.deps.now(), refreshToken);
+		if (!tokens.refreshToken) {
+			throw new Error('Token refresh did not return a usable refresh token. Reconnect Google Drive.');
+		}
+		return tokens;
+	}
+
+	isTokenExpired(expiresAt: number): boolean {
+		return isTokenExpired(expiresAt, this.deps.now());
+	}
+
+	private async exchangeCodeForTokens(code: string, codeVerifier: string, redirectUri: string): Promise<OAuthTokens> {
+		const body = new URLSearchParams({
+			code,
 			client_id: this.config.clientId,
 			redirect_uri: redirectUri,
-			response_type: 'code',
-			scope: this.SCOPES.join(' '),
-			access_type: 'offline', // This is important for refresh token
-			prompt: 'consent', // Force consent to get refresh token
-			code_challenge: codeChallenge,
-			code_challenge_method: 'S256'
+			grant_type: 'authorization_code',
+			code_verifier: codeVerifier
 		});
-
-		return `${this.AUTH_URL}?${params.toString()}`;
-	}
-
-	/**
-	 * Generate random code verifier for PKCE
-	 */
-	private generateCodeVerifier(): string {
-		const array = new Uint8Array(32);
-		crypto.getRandomValues(array);
-		return this.base64UrlEncode(array);
-	}
-
-	/**
-	 * Generate code challenge from verifier
-	 */
-	private async generateCodeChallenge(verifier: string): Promise<string> {
-		const encoder = new TextEncoder();
-		const data = encoder.encode(verifier);
-		const hash = await crypto.subtle.digest('SHA-256', data);
-		return this.base64UrlEncode(new Uint8Array(hash));
-	}
-
-	/**
-	 * Base64 URL encode
-	 */
-	private base64UrlEncode(buffer: Uint8Array): string {
-		let binary = '';
-		for (let i = 0; i < buffer.length; i++) {
-			binary += String.fromCharCode(buffer[i]);
+		if (this.config.clientSecret) {
+			body.set('client_secret', this.config.clientSecret);
 		}
-		return btoa(binary)
-			.replace(/\+/g, '-')
-			.replace(/\//g, '_')
-			.replace(/=+$/, '');
+
+		const response = await this.deps.requestToken(body);
+		if (response.status !== 200) {
+			throw new Error(`Token exchange failed (${response.status}). Check the OAuth client and redirect URI.`);
+		}
+
+		const tokens = parseTokenResponse(response.data, this.deps.now());
+		if (!tokens.refreshToken) {
+			throw new Error('Google did not return a refresh token. Remove Voice Briefing from your Google Account permissions and connect again.');
+		}
+		return tokens;
 	}
 
-	/**
-	 * Cleanup server
-	 */
 	private cleanup(): void {
-		if (this.server) {
-			this.server.close();
-			this.server = null;
-		}
+		if (!this.server) return;
+		this.server.closeAllConnections();
+		this.server.close();
+		this.server = null;
 	}
 
-	/**
-	 * Success HTML page
-	 */
 	private getSuccessHtml(): string {
-		return `
-<!DOCTYPE html>
-<html>
-<head>
-	<meta charset="UTF-8">
-	<title>Google Drive Connected</title>
-	<style>
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-			display: flex;
-			justify-content: center;
-			align-items: center;
-			height: 100vh;
-			margin: 0;
-			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		}
-		.container {
-			background: white;
-			padding: 40px 60px;
-			border-radius: 16px;
-			text-align: center;
-			box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-		}
-		.success-icon {
-			font-size: 64px;
-			margin-bottom: 20px;
-		}
-		h1 {
-			color: #333;
-			margin-bottom: 10px;
-		}
-		p {
-			color: #666;
-			margin-bottom: 20px;
-		}
-		.close-hint {
-			font-size: 14px;
-			color: #999;
-		}
-	</style>
-</head>
-<body>
-	<div class="container">
-		<div class="success-icon">✅</div>
-		<h1>Successfully Connected!</h1>
-		<p>Your Google Drive is now connected to Voice Briefing Plugin.</p>
-		<p class="close-hint">You can close this window and return to Obsidian.</p>
-	</div>
-</body>
-</html>
-		`;
+		return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Google Drive Connected</title></head>
+<body><h1>Successfully connected</h1><p>You can close this window and return to Obsidian.</p></body></html>`;
 	}
 
-	/**
-	 * Error HTML page
-	 */
-	private getErrorHtml(error: string): string {
-		return `
-<!DOCTYPE html>
-<html>
-<head>
-	<meta charset="UTF-8">
-	<title>Connection Failed</title>
-	<style>
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-			display: flex;
-			justify-content: center;
-			align-items: center;
-			height: 100vh;
-			margin: 0;
-			background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-		}
-		.container {
-			background: white;
-			padding: 40px 60px;
-			border-radius: 16px;
-			text-align: center;
-			box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-		}
-		.error-icon {
-			font-size: 64px;
-			margin-bottom: 20px;
-		}
-		h1 {
-			color: #333;
-			margin-bottom: 10px;
-		}
-		p {
-			color: #666;
-			margin-bottom: 20px;
-		}
-		.error-detail {
-			background: #fff3f3;
-			border: 1px solid #ffcccc;
-			padding: 10px 20px;
-			border-radius: 8px;
-			color: #cc0000;
-			font-family: monospace;
-		}
-	</style>
-</head>
-<body>
-	<div class="container">
-		<div class="error-icon">❌</div>
-		<h1>Connection Failed</h1>
-		<p>Failed to connect Google Drive.</p>
-		<div class="error-detail">${error}</div>
-		<p>Please try again in Obsidian.</p>
-	</div>
-</body>
-</html>
-		`;
+	private getErrorHtml(safeError: string): string {
+		return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Connection Failed</title></head>
+<body><h1>Connection failed</h1><p>${safeError}</p></body></html>`;
 	}
+}
+
+function firstQuery(value: unknown): string {
+	if (typeof value === 'string') return value;
+	if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+	return '';
 }

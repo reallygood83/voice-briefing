@@ -1589,12 +1589,12 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				cls: 'setting-item-description'
 			});
 			const steps = credentialsInfo.createEl('ol');
-			steps.createEl('li', { text: 'Go to console.cloud.google.com' });
-			steps.createEl('li', { text: 'Create a new project or select existing' });
-			steps.createEl('li', { text: 'Enable Google Drive API' });
-			steps.createEl('li', { text: 'Create OAuth 2.0 credentials (Desktop app)' });
-			steps.createEl('li', { text: 'Copy Client ID and Client Secret below' });
-			steps.createEl('li', { text: 'Add http://localhost:8585/callback to Authorized redirect URIs' });
+			steps.createEl('li', { text: 'Go to console.cloud.google.com and create a project' });
+			steps.createEl('li', { text: 'Enable the Google Drive API' });
+			steps.createEl('li', { text: 'Configure the OAuth consent screen and add yourself as a test user' });
+			steps.createEl('li', { text: 'Create an OAuth client of type Desktop app' });
+			steps.createEl('li', { text: 'Copy the Client ID and Client Secret below' });
+			steps.createEl('li', { text: 'If the client asks for a redirect URI, add http://127.0.0.1:8585/callback' });
 
 			new Setting(containerEl)
 				.setName('Client ID')
@@ -1769,21 +1769,6 @@ class VoiceBriefingSettingTab extends PluginSettingTab {
 				cls: 'setting-item-description'
 			});
 
-			// Token info for debugging (collapsible)
-			if (this.plugin.settings.googleDriveConnected && this.plugin.settings.googleDriveRefreshToken) {
-				const debugDiv = containerEl.createDiv('voice-briefing-debug');
-				const details = debugDiv.createEl('details');
-				details.createEl('summary', { text: '🔧 Advanced: Token Info' });
-				const pre = details.createEl('pre');
-				pre.style.fontSize = '11px';
-				pre.style.background = '#f5f5f5';
-				pre.style.padding = '8px';
-				pre.style.borderRadius = '4px';
-				pre.style.overflow = 'auto';
-				pre.setText(`Access Token: ${this.plugin.settings.googleDriveToken.substring(0, 20)}...
-Refresh Token: ${this.plugin.settings.googleDriveRefreshToken ? '✅ Saved' : '❌ Missing'}
-Expires At: ${this.plugin.settings.googleDriveTokenExpiresAt ? new Date(this.plugin.settings.googleDriveTokenExpiresAt).toLocaleString() : 'Unknown'}`);
-			}
 		}
 	}
 
