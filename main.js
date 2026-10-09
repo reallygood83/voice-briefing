@@ -4651,13 +4651,14 @@ function defaultOpenExternal(target) {
   const { shell } = require("electron");
   shell.openExternal(target);
 }
-var import_obsidian8, DEFAULT_TIMEOUT_MS, GoogleOAuthFlow;
+var import_obsidian8, DEFAULT_TIMEOUT_MS, CALLBACK_HOLD_MS, GoogleOAuthFlow;
 var init_google_oauth_flow = __esm({
   "src/cloud/google-oauth-flow.ts"() {
     import_obsidian8 = require("obsidian");
     init_extract_text();
     init_oauth_protocol();
     DEFAULT_TIMEOUT_MS = 12e4;
+    CALLBACK_HOLD_MS = 1e3;
     GoogleOAuthFlow = class {
       constructor(config, deps = {}) {
         this.config = config;
@@ -4690,13 +4691,29 @@ var init_google_oauth_flow = __esm({
               return;
             settled = true;
             window.clearTimeout(timer);
-            this.cleanup();
             action();
+            window.setTimeout(() => this.cleanup(), CALLBACK_HOLD_MS);
+          };
+          const sendHtml = (res, html, done) => {
+            res.writeHead(200, {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "no-store",
+              "Connection": "close"
+            });
+            res.end(html, done);
           };
           this.server = http.createServer((req, res) => {
             const callbackUrl = new URL(req.url || "/", "http://127.0.0.1");
+            if (callbackUrl.pathname === "/favicon.ico") {
+              res.writeHead(204, {
+                "Cache-Control": "public, max-age=86400",
+                "Connection": "close"
+              });
+              res.end();
+              return;
+            }
             if (callbackUrl.pathname !== "/callback") {
-              res.writeHead(404, { "Content-Type": "text/plain" });
+              res.writeHead(404, { "Content-Type": "text/plain", "Connection": "close" });
               res.end("Not found");
               return;
             }
@@ -4704,25 +4721,25 @@ var init_google_oauth_flow = __esm({
             const code = callbackUrl.searchParams.get("code") || "";
             if (error) {
               const safeError = redactSecrets(error);
-              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-              res.end(this.getErrorHtml(escapeHtml(safeError)));
-              finish(() => reject(new Error(`OAuth error: ${safeError}`)));
+              sendHtml(res, this.getErrorHtml(escapeHtml(safeError)), () => {
+                finish(() => reject(new Error(`OAuth error: ${safeError}`)));
+              });
               return;
             }
             if (!code) {
-              res.writeHead(400, { "Content-Type": "text/plain" });
+              res.writeHead(400, { "Content-Type": "text/plain", "Connection": "close" });
               res.end("Missing authorization code");
               return;
             }
             this.exchangeCodeForTokens(code, codeVerifier, redirectUri).then((tokens) => {
-              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-              res.end(this.getSuccessHtml());
-              finish(() => resolve(tokens));
+              sendHtml(res, this.getSuccessHtml(), () => {
+                finish(() => resolve(tokens));
+              });
             }).catch((tokenError) => {
               const message = redactSecrets((tokenError == null ? void 0 : tokenError.message) || "Token exchange failed");
-              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-              res.end(this.getErrorHtml(escapeHtml(message)));
-              finish(() => reject(new Error(message)));
+              sendHtml(res, this.getErrorHtml(escapeHtml(message)), () => {
+                finish(() => reject(new Error(message)));
+              });
             });
           });
           this.server.on("error", (err) => {
@@ -4808,12 +4825,12 @@ var init_google_oauth_flow = __esm({
       }
       getSuccessHtml() {
         return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Google Drive Connected</title></head>
+<html><head><meta charset="UTF-8"><link rel="icon" href="data:,"><title>Google Drive Connected</title></head>
 <body><h1>Successfully connected</h1><p>You can close this window and return to Obsidian.</p></body></html>`;
       }
       getErrorHtml(safeError) {
         return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Connection Failed</title></head>
+<html><head><meta charset="UTF-8"><link rel="icon" href="data:,"><title>Connection Failed</title></head>
 <body><h1>Connection failed</h1><p>${safeError}</p></body></html>`;
       }
     };
