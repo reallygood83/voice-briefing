@@ -35,6 +35,8 @@ export interface OAuthDependencies {
 export type { OAuthTokens };
 
 const DEFAULT_TIMEOUT_MS = 120000;
+/** Chrome asks for /favicon.ico after the callback page. Hold the listener open until that request can finish. */
+const CALLBACK_HOLD_MS = 1000;
 
 async function defaultRequestToken(body: URLSearchParams): Promise<TokenRequestResult> {
 	const { requestUrl } = await import('obsidian');
@@ -55,7 +57,7 @@ function defaultOpenExternal(target: string): void {
 
 interface LoopbackResponse {
 	writeHead(status: number, headers: Record<string, string>): void;
-	end(body?: string): void;
+	end(body?: string, callback?: () => void): void;
 }
 
 interface LoopbackServer {
@@ -101,14 +103,31 @@ export class GoogleOAuthFlow {
 				if (settled) return;
 				settled = true;
 				window.clearTimeout(timer);
-				this.cleanup();
 				action();
+				window.setTimeout(() => this.cleanup(), CALLBACK_HOLD_MS);
+			};
+
+			const sendHtml = (res: LoopbackResponse, html: string, done: () => void) => {
+				res.writeHead(200, {
+					'Content-Type': 'text/html; charset=utf-8',
+					'Cache-Control': 'no-store',
+					'Connection': 'close'
+				});
+				res.end(html, done);
 			};
 
 			this.server = http.createServer((req, res) => {
 				const callbackUrl = new URL(req.url || '/', 'http://127.0.0.1');
+				if (callbackUrl.pathname === '/favicon.ico') {
+					res.writeHead(204, {
+						'Cache-Control': 'public, max-age=86400',
+						'Connection': 'close'
+					});
+					res.end();
+					return;
+				}
 				if (callbackUrl.pathname !== '/callback') {
-					res.writeHead(404, { 'Content-Type': 'text/plain' });
+					res.writeHead(404, { 'Content-Type': 'text/plain', 'Connection': 'close' });
 					res.end('Not found');
 					return;
 				}
@@ -118,29 +137,29 @@ export class GoogleOAuthFlow {
 
 				if (error) {
 					const safeError = redactSecrets(error);
-					res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-					res.end(this.getErrorHtml(escapeHtml(safeError)));
-					finish(() => reject(new Error(`OAuth error: ${safeError}`)));
+					sendHtml(res, this.getErrorHtml(escapeHtml(safeError)), () => {
+						finish(() => reject(new Error(`OAuth error: ${safeError}`)));
+					});
 					return;
 				}
 
 				if (!code) {
-					res.writeHead(400, { 'Content-Type': 'text/plain' });
+					res.writeHead(400, { 'Content-Type': 'text/plain', 'Connection': 'close' });
 					res.end('Missing authorization code');
 					return;
 				}
 
 				this.exchangeCodeForTokens(code, codeVerifier, redirectUri)
 					.then((tokens) => {
-						res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-						res.end(this.getSuccessHtml());
-						finish(() => resolve(tokens));
+						sendHtml(res, this.getSuccessHtml(), () => {
+							finish(() => resolve(tokens));
+						});
 					})
 					.catch((tokenError: any) => {
 						const message = redactSecrets(tokenError?.message || 'Token exchange failed');
-						res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-						res.end(this.getErrorHtml(escapeHtml(message)));
-						finish(() => reject(new Error(message)));
+						sendHtml(res, this.getErrorHtml(escapeHtml(message)), () => {
+							finish(() => reject(new Error(message)));
+						});
 					});
 			});
 
@@ -238,13 +257,13 @@ export class GoogleOAuthFlow {
 
 	private getSuccessHtml(): string {
 		return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Google Drive Connected</title></head>
+<html><head><meta charset="UTF-8"><link rel="icon" href="data:,"><title>Google Drive Connected</title></head>
 <body><h1>Successfully connected</h1><p>You can close this window and return to Obsidian.</p></body></html>`;
 	}
 
 	private getErrorHtml(safeError: string): string {
 		return `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Connection Failed</title></head>
+<html><head><meta charset="UTF-8"><link rel="icon" href="data:,"><title>Connection Failed</title></head>
 <body><h1>Connection failed</h1><p>${safeError}</p></body></html>`;
 	}
 }

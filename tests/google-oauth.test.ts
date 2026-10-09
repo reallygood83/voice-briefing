@@ -12,16 +12,23 @@ import {
 	parseTokenResponse
 } from '../src/cloud/oauth-protocol';
 
-function get(url: string): Promise<string> {
+function getResponse(url: string): Promise<{ status: number; body: string }> {
 	return new Promise((resolve, reject) => {
 		const req = httpRequest(url, (res) => {
 			const chunks: Buffer[] = [];
 			res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-			res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+			res.on('end', () => resolve({
+				status: res.statusCode || 0,
+				body: Buffer.concat(chunks).toString('utf8')
+			}));
 		});
 		req.on('error', reject);
 		req.end();
 	});
+}
+
+function get(url: string): Promise<string> {
+	return getResponse(url).then((response) => response.body);
 }
 
 describe('OAuth protocol', () => {
@@ -97,10 +104,16 @@ describe('loopback OAuth flow', () => {
 		const port = ready.port;
 		assert.ok(port > 0);
 
+		const favicon = await getResponse(`http://127.0.0.1:${port}/favicon.ico`);
+		assert.equal(favicon.status, 204);
+
 		const page = await get(`http://127.0.0.1:${port}/callback?code=auth-code`);
 		const tokens = await pending;
+		const faviconAfter = await getResponse(`http://127.0.0.1:${port}/favicon.ico`);
 
+		assert.equal(faviconAfter.status, 204);
 		assert.match(page, /Successfully connected/);
+		assert.match(page, /rel="icon" href="data:,"/);
 		assert.equal(tokens.accessToken, 'ya29.ACCESS-TOKEN');
 		assert.equal(tokens.refreshToken, '1//REFRESH-TOKEN');
 		assert.equal(seenBody?.get('grant_type'), 'authorization_code');
