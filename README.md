@@ -288,10 +288,10 @@ API keys and Google client credentials are your accounts. Several of these servi
 1. 라이선스를 디렉터리 배포가 가능한 조건으로 바꿀지 결정합니다. 이 저장소는 그 문장을 수정하지 않습니다.
 2. GitHub 저장소를 공개합니다.
 3. 저장소 Settings → Actions → General → Workflow permissions를 **Read and write**로 둡니다. 릴리스 워크플로는 태그 푸시 때 draft 릴리스를 만들고 공식 템플릿처럼 아티팩트 attestation을 붙입니다.
-4. `manifest.json`의 `version`과 같은 주석 태그(`git tag -a 0.5.0 -m "0.5.0"`)를 푸시합니다. Actions가 draft 릴리스를 만들면 **Publish**해야 설치할 수 있습니다. 태그 문자열은 매니페스트 버전과 같아야 합니다.
+4. `manifest.json`의 `version`과 같은 주석 태그(`git tag -a 0.5.1 -m "0.5.1"`)를 푸시합니다. Actions가 draft 릴리스를 만들면 **Publish**해야 설치할 수 있습니다. 태그 문자열은 매니페스트 버전과 같아야 합니다.
 5. [community.obsidian.md](https://community.obsidian.md)에 GitHub 계정을 연결하고 플러그인을 제출합니다. 제출 화면이 `obsidianmd/obsidian-releases` 풀 리퀘스트를 요구하면 그 PR은 작성자가 만듭니다. 안내: [Submit your plugin](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin), [Release your plugin with GitHub Actions](https://docs.obsidian.md/Plugins/Releasing/Release+your+plugin+with+GitHub+Actions).
 
-저장소 루트의 `main.js`는 소스와 함께 커밋된 빌드입니다. 디렉터리는 그 파일을 저장소에서 받지 않고, 릴리스에 첨부된 `main.js`, `manifest.json`, `styles.css`를 받습니다. `versions.json`은 플러그인 버전과 `minAppVersion`을 대응시키며, `minAppVersion`이 바뀐 0.5.0 항목을 추가해 두었습니다.
+저장소 루트의 `main.js`는 소스와 함께 커밋된 빌드입니다. 디렉터리는 그 파일을 저장소에서 받지 않고, 릴리스에 첨부된 `main.js`, `manifest.json`, `styles.css`를 받습니다. `versions.json`은 플러그인 버전과 `minAppVersion`을 대응시키며, `minAppVersion`이 바뀐 0.5.0과 콜백 수정 0.5.1 항목을 추가해 두었습니다.
 
 ## 👤 Author
 
