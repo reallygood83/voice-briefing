@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { describe, it } from 'node:test';
 import { GoogleOAuthFlow } from '../src/cloud/google-oauth-flow';
@@ -30,6 +31,15 @@ function getResponse(url: string): Promise<{ status: number; body: string }> {
 function get(url: string): Promise<string> {
 	return getResponse(url).then((response) => response.body);
 }
+
+describe('desktop bundle', () => {
+	it('does not dynamic-import obsidian when exchanging the Google token', () => {
+		const source = readFileSync('src/cloud/google-oauth-flow.ts', 'utf8');
+		const bundle = readFileSync('main.js', 'utf8');
+		assert.equal(/import\s*\(\s*['"]obsidian['"]\s*\)/.test(source), false);
+		assert.equal(/import\s*\(\s*['"]obsidian['"]\s*\)/.test(bundle), false);
+	});
+});
 
 describe('OAuth protocol', () => {
 	it('builds a loopback PKCE URL without the client secret', async () => {

@@ -1,4 +1,4 @@
-import { Platform } from 'obsidian';
+import { Platform, requestUrl } from 'obsidian';
 import { redactSecrets } from '../ai/extract-text';
 import {
 	GOOGLE_DRIVE_SCOPES,
@@ -39,7 +39,7 @@ const DEFAULT_TIMEOUT_MS = 120000;
 const CALLBACK_HOLD_MS = 1000;
 
 async function defaultRequestToken(body: URLSearchParams): Promise<TokenRequestResult> {
-	const { requestUrl } = await import('obsidian');
+	// Keep this a static import. The desktop renderer cannot resolve a bare obsidian specifier.
 	const response = await requestUrl({
 		url: GOOGLE_TOKEN_URL,
 		method: 'POST',
