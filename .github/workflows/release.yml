@@ -30,6 +30,8 @@ jobs:
           npm run build
 
       - name: Generate artifact attestation
+        # Private user repos cannot persist attestations. Do not block the release.
+        continue-on-error: true
         uses: actions/attest@v4
         with:
           subject-path: |

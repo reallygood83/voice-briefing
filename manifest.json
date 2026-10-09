@@ -1,7 +1,7 @@
 {
   "id": "voice-briefing",
   "name": "Voice Briefing",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "minAppVersion": "1.4.0",
   "description": "Convert your notes into AI-powered audio briefings with cloud sharing support",
   "author": "reallygood83",
