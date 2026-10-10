@@ -13,7 +13,7 @@ await build({
 	platform: 'node',
 	format: 'cjs',
 	outdir: 'tests-dist',
-	external: ['axios', 'electron'],
+	external: ['electron'],
 	alias: {
 		obsidian: './tests/shims/obsidian.js'
 	},

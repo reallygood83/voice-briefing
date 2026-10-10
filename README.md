@@ -268,10 +268,10 @@ API keys and Google client credentials are your accounts. Several of these servi
 
 1. GitHub 저장소를 공개합니다. 비공개 저장소는 디렉터리에 등록되지 않습니다.
 2. 저장소 Settings → Actions → General → Workflow permissions를 **Read and write**로 둡니다.
-3. 제출할 릴리스의 태그 이름은 `manifest.json`의 `version`과 같아야 합니다. 0.5.3 릴리스가 그 버전입니다.
+3. 제출할 릴리스의 태그 이름은 `manifest.json`의 `version`과 같아야 합니다. 0.5.4 릴리스가 그 버전입니다.
 4. [community.obsidian.md](https://community.obsidian.md)에 GitHub 계정을 연결하고 플러그인을 제출합니다. 안내: [Submit your plugin](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin).
 
-`authorUrl`은 GitHub 프로필 `https://github.com/reallygood83` 입니다. 플러그인 설명은 마침표로 끝납니다. `versions.json`에는 0.5.0부터 0.5.3까지 `minAppVersion` 1.4.0이 들어 있습니다.
+`authorUrl`은 GitHub 프로필 `https://github.com/reallygood83` 입니다. 플러그인 설명은 마침표로 끝납니다. `versions.json`에는 0.5.0부터 0.5.4까지 `minAppVersion` 1.4.0이 들어 있습니다.
 
 ## 👤 Author
 
