@@ -9,9 +9,6 @@ for (const block of obsidianmd.configs.recommended) {
 	}
 }
 
-// The LICENSE file is the author's All Rights Reserved text. Do not rewrite it.
-obsidianRules['obsidianmd/validate-license'] = 'off';
-
 export default [
 	{
 		ignores: [

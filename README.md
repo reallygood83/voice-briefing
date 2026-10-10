@@ -4,24 +4,11 @@ Convert your Obsidian notes into 1-2 minute audio briefings using AI and Text-to
 
 ---
 
-## ⚖️ LICENSE AND COPYRIGHT
+## ⚖️ License
 
-**Copyright © 2025 reallygood83. All Rights Reserved.**
+Copyright © 2025-2026 reallygood83.
 
-**IMPORTANT:** This software is for **personal use only**.
-
-### Commercial Use Restrictions
-- ❌ **Commercial use is PROHIBITED** without explicit written permission from the author
-- ❌ You may NOT use this software in any business or commercial environment
-- ❌ You may NOT sell, distribute, or sublicense this software
-- ❌ You may NOT provide paid services using this software
-
-### Permission Required
-- ✅ **Personal, non-commercial use** is permitted
-- 📧 **All other uses** require written permission from the author
-- 🔐 Contact: [GitHub](https://github.com/reallygood83/voice-note-obsidian)
-
-For full license terms, see the [LICENSE](LICENSE) file.
+This plugin is released under the [MIT License](LICENSE). You may use, copy, modify, and distribute it, including in the Obsidian community directory. Keep the copyright notice and license text with copies of the software.
 
 ---
 
@@ -273,25 +260,18 @@ Audio files are written inside the vault at `<vault>/.obsidian/voice-briefings/`
 
 API keys and Google client credentials are your accounts. Several of these services are paid or have a free tier. Full use of a provider requires that provider's key.
 
-## 커뮤니티 디렉터리에 올리기 전에
+## 커뮤니티 디렉터리에 올리기
 
-라이선스 본문(이 README 위의 LICENSE 절과 저장소 `LICENSE` 파일)은 바꾸지 않았습니다. 그 조건은 개인적 사용만 허용하고 배포·수정·상업적 사용을 금지합니다.
-
-공식 정책:
-
-- [Developer policies](https://docs.obsidian.md/community-directory/developer-policies) — 디렉터리 플러그인은 `LICENSE`가 있어야 하고, 네트워크 사용과 계정 필요 여부를 README에 밝혀야 합니다. 비공개 소스는 건별로 봅니다.
-- [The future of Obsidian plugins](https://obsidian.md/blog/future-of-plugins/) — 이 글을 기준으로는 새 비공개 소스 플러그인을 디렉터리에 받지 않습니다.
-- 커뮤니티 디렉터리는 릴리스 자산(`main.js`, `manifest.json`, `styles.css`)을 사용자에게 배포합니다. 현재 `LICENSE`는 허가 없는 배포를 금지하므로, 라이선스를 바꾸기 전에는 등록이 막힙니다. 라이선스를 바꿀지는 작성자 결정입니다.
+라이선스는 MIT입니다. 커뮤니티 디렉터리가 `main.js`, `manifest.json`, `styles.css`를 사용자에게 배포해도 됩니다.
 
 작성자가 직접 할 일:
 
-1. 라이선스를 디렉터리 배포가 가능한 조건으로 바꿀지 결정합니다. 이 저장소는 그 문장을 수정하지 않습니다.
-2. GitHub 저장소를 공개합니다.
-3. 저장소 Settings → Actions → General → Workflow permissions를 **Read and write**로 둡니다. 릴리스 워크플로는 태그 푸시 때 draft 릴리스를 만들고 공식 템플릿처럼 아티팩트 attestation을 붙입니다.
-4. `manifest.json`의 `version`과 같은 주석 태그(`git tag -a 0.5.1 -m "0.5.1"`)를 푸시합니다. Actions가 draft 릴리스를 만들면 **Publish**해야 설치할 수 있습니다. 태그 문자열은 매니페스트 버전과 같아야 합니다.
-5. [community.obsidian.md](https://community.obsidian.md)에 GitHub 계정을 연결하고 플러그인을 제출합니다. 제출 화면이 `obsidianmd/obsidian-releases` 풀 리퀘스트를 요구하면 그 PR은 작성자가 만듭니다. 안내: [Submit your plugin](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin), [Release your plugin with GitHub Actions](https://docs.obsidian.md/Plugins/Releasing/Release+your+plugin+with+GitHub+Actions).
+1. GitHub 저장소를 공개합니다. 비공개 저장소는 디렉터리에 등록되지 않습니다.
+2. 저장소 Settings → Actions → General → Workflow permissions를 **Read and write**로 둡니다.
+3. 제출할 릴리스의 태그 이름은 `manifest.json`의 `version`과 같아야 합니다. 0.5.3 릴리스가 그 버전입니다.
+4. [community.obsidian.md](https://community.obsidian.md)에 GitHub 계정을 연결하고 플러그인을 제출합니다. 안내: [Submit your plugin](https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin).
 
-저장소 루트의 `main.js`는 소스와 함께 커밋된 빌드입니다. 디렉터리는 그 파일을 저장소에서 받지 않고, 릴리스에 첨부된 `main.js`, `manifest.json`, `styles.css`를 받습니다. `versions.json`은 플러그인 버전과 `minAppVersion`을 대응시키며, 0.5.0부터 0.5.2까지 `minAppVersion` 1.4.0으로 적어 두었습니다.
+`authorUrl`은 GitHub 프로필 `https://github.com/reallygood83` 입니다. 플러그인 설명은 마침표로 끝납니다. `versions.json`에는 0.5.0부터 0.5.3까지 `minAppVersion` 1.4.0이 들어 있습니다.
 
 ## 👤 Author
 
