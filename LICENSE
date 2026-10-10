@@ -1,50 +1,21 @@
-Voice Briefing - Obsidian Plugin
-Copyright (c) 2025 reallygood83
+MIT License
 
-PROPRIETARY LICENSE - RESTRICTED USE
+Copyright (c) 2025-2026 reallygood83
 
-This software and associated documentation files (the "Software") are the proprietary
-property of reallygood83 (the "Author"). All rights reserved.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-PERMISSIONS AND RESTRICTIONS:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-1. PERSONAL USE ONLY
-   - You may use this Software for personal, non-commercial purposes only.
-   - You may install and use the Software in your personal Obsidian vault.
-
-2. COMMERCIAL USE PROHIBITED
-   - You may NOT use this Software for any commercial purposes without explicit
-     written permission from the Author.
-   - Commercial use includes, but is not limited to:
-     * Using the Software in a business environment
-     * Selling or distributing the Software for profit
-     * Providing services using this Software for compensation
-     * Including this Software as part of a commercial product or service
-
-3. PERMISSION REQUIRED
-   - Any use beyond personal use requires explicit written permission from the Author.
-   - To request permission for commercial use or other uses, contact the Author
-     through GitHub: https://github.com/reallygood83
-
-4. MODIFICATION AND DISTRIBUTION
-   - You may NOT modify, merge, publish, distribute, sublicense, or sell copies
-     of the Software without written permission from the Author.
-   - You may NOT create derivative works based on the Software.
-
-5. NO WARRANTY
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
-   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-6. TERMINATION
-   This license is effective until terminated. Your rights under this license
-   will terminate automatically without notice if you fail to comply with any
-   of its terms.
-
-For questions about licensing or to request permission for commercial use:
-GitHub: https://github.com/reallygood83/voice-note-obsidian
-
-Copyright © 2025 reallygood83. All Rights Reserved.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

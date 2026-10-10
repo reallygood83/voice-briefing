@@ -1,14 +1,9 @@
 /**
  * Voice Briefing - Obsidian Plugin
  *
- * Copyright (c) 2025 reallygood83. All Rights Reserved.
+ * Copyright (c) 2025-2026 reallygood83
  *
- * This software is for personal use only.
- * Commercial use is PROHIBITED without explicit written permission from the author.
- * Any use beyond personal use requires written permission.
- *
- * For licensing inquiries: https://github.com/reallygood83/voice-note-obsidian
- * See LICENSE file for full terms.
+ * Released under the MIT License. See the LICENSE file.
  */
 
 import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Modal, requestUrl } from 'obsidian';
