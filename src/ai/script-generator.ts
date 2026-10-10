@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { requestUrl } from 'obsidian';
 import { emptyScriptReason, extractGeneratedText, redactSecrets } from './extract-text';
 import {
 	estimateDurationSeconds,
@@ -41,11 +41,24 @@ async function defaultRequester(options: {
 	body: unknown;
 	headers?: Record<string, string>;
 }): Promise<JsonResponse> {
-	const response = await axios.post(options.url, options.body, {
-		headers: options.headers,
-		validateStatus: () => true
+	const headers = { ...(options.headers ?? {}) };
+	if (!Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) {
+		headers['Content-Type'] = 'application/json';
+	}
+	const response = await requestUrl({
+		url: options.url,
+		method: 'POST',
+		headers,
+		body: JSON.stringify(options.body),
+		throw: false
 	});
-	return { status: response.status, data: response.data };
+	let data: unknown = response.text;
+	try {
+		data = response.json;
+	} catch {
+		data = response.text;
+	}
+	return { status: response.status, data };
 }
 
 export class ScriptGenerator {
